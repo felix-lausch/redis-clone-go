@@ -11,9 +11,6 @@ var _ = net.Listen
 var _ = os.Exit
 
 func main() {
-	// You can use print statements as follows for debugging, they'll be visible when running tests.
-	fmt.Println("Logs from your program will appear here!")
-
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
 	if err != nil {
 		fmt.Println("Failed to bind to port 6379")
@@ -31,7 +28,12 @@ func main() {
 	for {
 		msg := make([]byte, 256)
 
-		conn.Read(msg)
+		_, err := conn.Read(msg)
+		if err != nil {
+			fmt.Println("Error reading from connection: ", err.Error())
+			continue
+		}
+
 		conn.Write([]byte("+PONG\r\n"))
 	}
 
