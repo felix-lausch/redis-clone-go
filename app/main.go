@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
 	"net"
 	"os"
+	"strings"
 )
 
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
@@ -36,14 +39,74 @@ func main() {
 
 func handleConnection(conn net.Conn) {
 	for {
-		msg := make([]byte, 256)
+		reader := bufio.NewReader(conn)
 
-		_, err := conn.Read(msg)
+		msg, err := reader.ReadString('\n')
 		if err != nil {
 			fmt.Println("Error reading from connection: ", err.Error())
 			continue
 		}
 
-		conn.Write([]byte("+PONG\r\n"))
+		// msg := make([]byte, 256)
+
+		// n, err := conn.Read(msg)
+		// if err != nil {
+		// 	fmt.Println("Error reading from connection: ", err.Error())
+		// 	continue
+		// }
+
+		//parse command and args
+		command, args, err := parseInput(msg)
+		if err != nil {
+			conn.Write([]byte("-ERROR input could not be parsed\r\n"))
+			continue
+		}
+
+		//handle command
+		response, err := handleCommand(command, args)
+		if err != nil {
+			conn.Write(fmt.Appendf(nil, "-ERROR %v\r\n", err))
+		}
+		fmt.Println(command)
+
+		conn.Write(response)
+	}
+}
+
+func parseInput(i string) (command string, args []string, err error) {
+	inputType := string(i[0])
+	//detect type -> the first byte indicates the type
+
+	// fmt.Println(i)
+	splintInput := strings.Split(strings.TrimSpace(i), " ")
+
+	//parse command
+	command = strings.ToUpper(splintInput[0])
+	fmt.Println(command)
+
+	//parse args
+	args = splintInput[1:]
+
+	return command, args, nil
+}
+
+func handleCommand(command string, args []string) ([]byte, error) {
+	switch command {
+	case "PING":
+		{
+			return []byte("+PONG\r\n"), nil
+		}
+	case "ECHO":
+		{
+			if len(args) < 1 {
+				return nil, errors.New("wrong number of arguments for command")
+			}
+
+			return fmt.Appendf(nil, "%v \"%v\"\r\n", command, args[0]), nil
+		}
+	default:
+		{
+			return nil, fmt.Errorf("unkown command '%v'", command)
+		}
 	}
 }
