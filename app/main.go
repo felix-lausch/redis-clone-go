@@ -12,9 +12,6 @@ import (
 	"time"
 )
 
-// Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
-var _ = net.Listen
-var _ = os.Exit
 var kvStore = make(map[string]StoredValue)
 
 func main() {
@@ -41,6 +38,7 @@ func main() {
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
+
 	reader := bufio.NewReader(conn)
 
 	for {
@@ -53,7 +51,6 @@ func handleConnection(conn net.Conn) {
 			continue
 		}
 
-		//handle command
 		response, err := handleCommand(command, args)
 		if err != nil {
 			conn.Write(fmt.Appendf(nil, "-ERROR %v\r\n", err))
@@ -63,6 +60,7 @@ func handleConnection(conn net.Conn) {
 	}
 }
 
+// TODO: parsing logic should be moved to its own file and could most likely be refactored
 func parseResp(reader *bufio.Reader) (command string, args []string, err error) {
 	const arrayIndicator byte = '*'
 
@@ -143,6 +141,7 @@ func parseBulkStringArray(reader *bufio.Reader, length int) (command string, arg
 	return command, args, nil
 }
 
+// TODO: this method needs to be refactored. the command execution should be a seperate function every time.
 func handleCommand(command string, args []string) ([]byte, error) {
 	switch command {
 	case "PING":
@@ -157,6 +156,7 @@ func handleCommand(command string, args []string) ([]byte, error) {
 
 			return formatBulkString(args[0]), nil
 		}
+		//TODO: for set and get i need to handle race conditions and concurrency
 	case "SET":
 		{
 			if len(args) < 2 {
