@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -38,10 +39,11 @@ func main() {
 }
 
 func handleConnection(conn net.Conn) {
-	for {
-		buffer := make([]byte, 256)
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
 
-		n, err := conn.Read(buffer)
+	for {
+		command, args, err := parseResp(reader)
 		if err == io.EOF {
 			fmt.Println("client disconnected")
 			return
@@ -50,15 +52,26 @@ func handleConnection(conn net.Conn) {
 			continue
 		}
 
-		msg := string(buffer[:n])
+		// buffer := make([]byte, 256)
 
-		//parse command and args
-		command, args, err := parseInput(msg)
-		if err != nil {
-			fmt.Println("Error parsing input: ", err.Error())
-			conn.Write([]byte("-ERROR input could not be parsed\r\n"))
-			continue
-		}
+		// n, err := conn.Read(buffer)
+		// if err == io.EOF {
+		// 	fmt.Println("client disconnected")
+		// 	return
+		// } else if err != nil {
+		// 	fmt.Println("Error reading from connection: ", err.Error())
+		// 	continue
+		// }
+
+		// msg := string(buffer[:n])
+
+		// //parse command and args
+		// command, args, err := parseInput(msg)
+		// if err != nil {
+		// 	fmt.Println("Error parsing input: ", err.Error())
+		// 	conn.Write([]byte("-ERROR input could not be parsed\r\n"))
+		// 	continue
+		// }
 
 		//handle command
 		response, err := handleCommand(command, args)
@@ -68,6 +81,81 @@ func handleConnection(conn net.Conn) {
 
 		conn.Write(response)
 	}
+}
+
+func parseResp(reader *bufio.Reader) (command string, args []string, err error) {
+	const arrayIndicator byte = '*'
+
+	typeIndicator, err := reader.ReadByte()
+	if err == io.EOF {
+		return "", nil, err
+	} else if err != nil {
+		return "", nil, errors.New("error reading first byte")
+	}
+
+	if typeIndicator != arrayIndicator {
+		return "", nil, errors.New("input is not of type 'Array'")
+	}
+
+	arrayLengthStr, err := reader.ReadString('\n')
+	if err != nil {
+		return "", nil, errors.New("error reading array length")
+	}
+
+	arrLen, err := strconv.Atoi(strings.TrimSuffix(arrayLengthStr, "\r\n"))
+	if err != nil {
+		return "", nil, errors.New("array length couldn't be parsed")
+	}
+
+	command, args, err = parseBulkStringArray(reader, arrLen)
+	if err != nil {
+		return "", nil, fmt.Errorf("error parsing bulk string array: %w", err.Error())
+	}
+
+	return command, args, nil
+}
+
+func parseBulkStringArray(reader *bufio.Reader, len int) (command string, args []string, err error) {
+	const bulkStringIndicator byte = '$'
+
+	inputParts := make([]string, 0, len)
+
+	for i := 1; i < len*2; i += 2 {
+		typeIndicator, err := reader.ReadByte()
+		if err != nil {
+			return "", nil, errors.New("error reading type byte")
+		}
+
+		if typeIndicator != bulkStringIndicator {
+			return "", nil, errors.New("input is not of type 'Bulk string'")
+		}
+
+		stringLengthStr, err := reader.ReadString('\n')
+		if err != nil {
+			return "", nil, errors.New("error reading bulk string length")
+		}
+
+		strLength, err := strconv.Atoi(strings.TrimSuffix(stringLengthStr, "\r\n"))
+		if err != nil {
+			return "", nil, fmt.Errorf("bulk string length parse: %w", err)
+		}
+
+		stringBuffer := make([]byte, strLength)
+		_, err = io.ReadFull(reader, stringBuffer)
+		if err != nil {
+			return "", nil, fmt.Errorf("error reading bulk string: %w", err)
+		}
+
+		inputParts = append(inputParts, string(stringBuffer))
+
+		//TODO: this is source of errors to just discard nilly willy
+		reader.Discard(2) //discard carriage return
+	}
+
+	command = strings.ToUpper(inputParts[0])
+	args = inputParts[1:]
+
+	return command, args, nil
 }
 
 func parseInput(input string) (command string, args []string, err error) {
