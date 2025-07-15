@@ -12,6 +12,7 @@ import (
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
 var _ = net.Listen
 var _ = os.Exit
+var kvStore = make(map[string]string)
 
 func main() {
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
@@ -113,11 +114,33 @@ func handleCommand(command string, args []string) ([]byte, error) {
 		}
 	case "ECHO":
 		{
-			if len(args) < 1 {
+			if len(args) != 1 {
 				return nil, errors.New("wrong number of arguments for command")
 			}
 
 			return formatBulkString(args[0]), nil
+		}
+	case "SET":
+		{
+			if len(args) != 2 {
+				return nil, errors.New("wrong number of arguments for command")
+			}
+
+			kvStore[args[0]] = args[1]
+			return formatSimpleString("OK"), nil
+		}
+	case "GET":
+		{
+			if len(args) != 1 {
+				return nil, errors.New("wrong number of arguments for command")
+			}
+
+			v, ok := kvStore[args[0]]
+			if !ok {
+				return formatNullBulkString(), nil
+			}
+
+			return formatBulkString(v), nil
 		}
 	default:
 		{
@@ -132,4 +155,8 @@ func formatSimpleString(input string) []byte {
 
 func formatBulkString(input string) []byte {
 	return fmt.Appendf(nil, "$%v\r\n%v\r\n", len(input), input)
+}
+
+func formatNullBulkString() []byte {
+	return []byte("$-1\r\n")
 }
