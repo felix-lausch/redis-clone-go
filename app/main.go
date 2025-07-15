@@ -9,12 +9,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
 var _ = net.Listen
 var _ = os.Exit
-var kvStore = make(map[string]string)
+var kvStore = make(map[string]StoredValue)
 
 func main() {
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
@@ -158,11 +159,25 @@ func handleCommand(command string, args []string) ([]byte, error) {
 		}
 	case "SET":
 		{
-			if len(args) != 2 {
+			if len(args) < 2 {
 				return nil, errors.New("wrong number of arguments for command")
 			}
 
-			kvStore[args[0]] = args[1]
+			expiresBy := int64(-1)
+			if len(args) == 4 {
+				if strings.ToUpper(args[2]) != "PX" {
+					return nil, fmt.Errorf("unknown argument: %v", args[2])
+				}
+
+				ms, err := strconv.ParseInt(args[3], 10, 64)
+				if err != nil {
+					return nil, errors.New("expire time couldn't be parsed")
+				}
+
+				expiresBy = time.Now().UnixMilli() + ms
+			}
+
+			kvStore[args[0]] = *NewStoredValue(args[1], expiresBy)
 			return formatSimpleString("OK"), nil
 		}
 	case "GET":
@@ -171,12 +186,17 @@ func handleCommand(command string, args []string) ([]byte, error) {
 				return nil, errors.New("wrong number of arguments for command")
 			}
 
-			v, ok := kvStore[args[0]]
+			storedValue, ok := kvStore[args[0]]
 			if !ok {
+				return formatNullBulkString(), nil
+			} else if storedValue.expiresBy != -1 && time.Now().UnixMilli() > storedValue.expiresBy {
+				fmt.Println("tried to access expired value")
+				delete(kvStore, args[0])
+
 				return formatNullBulkString(), nil
 			}
 
-			return formatBulkString(v), nil
+			return formatBulkString(storedValue.val), nil
 		}
 	default:
 		{
@@ -195,4 +215,13 @@ func formatBulkString(input string) []byte {
 
 func formatNullBulkString() []byte {
 	return []byte("$-1\r\n")
+}
+
+type StoredValue struct {
+	val       string
+	expiresBy int64
+}
+
+func NewStoredValue(v string, exp int64) *StoredValue {
+	return &StoredValue{val: v, expiresBy: exp}
 }
