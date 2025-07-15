@@ -52,27 +52,6 @@ func handleConnection(conn net.Conn) {
 			continue
 		}
 
-		// buffer := make([]byte, 256)
-
-		// n, err := conn.Read(buffer)
-		// if err == io.EOF {
-		// 	fmt.Println("client disconnected")
-		// 	return
-		// } else if err != nil {
-		// 	fmt.Println("Error reading from connection: ", err.Error())
-		// 	continue
-		// }
-
-		// msg := string(buffer[:n])
-
-		// //parse command and args
-		// command, args, err := parseInput(msg)
-		// if err != nil {
-		// 	fmt.Println("Error parsing input: ", err.Error())
-		// 	conn.Write([]byte("-ERROR input could not be parsed\r\n"))
-		// 	continue
-		// }
-
 		//handle command
 		response, err := handleCommand(command, args)
 		if err != nil {
@@ -109,18 +88,18 @@ func parseResp(reader *bufio.Reader) (command string, args []string, err error) 
 
 	command, args, err = parseBulkStringArray(reader, arrLen)
 	if err != nil {
-		return "", nil, fmt.Errorf("error parsing bulk string array: %w", err.Error())
+		return "", nil, fmt.Errorf("error parsing bulk string array: %w", err)
 	}
 
 	return command, args, nil
 }
 
-func parseBulkStringArray(reader *bufio.Reader, len int) (command string, args []string, err error) {
+func parseBulkStringArray(reader *bufio.Reader, length int) (command string, args []string, err error) {
 	const bulkStringIndicator byte = '$'
 
-	inputParts := make([]string, 0, len)
+	inputParts := make([]string, 0, length)
 
-	for i := 1; i < len*2; i += 2 {
+	for range length {
 		typeIndicator, err := reader.ReadByte()
 		if err != nil {
 			return "", nil, errors.New("error reading type byte")
@@ -148,48 +127,13 @@ func parseBulkStringArray(reader *bufio.Reader, len int) (command string, args [
 
 		inputParts = append(inputParts, string(stringBuffer))
 
-		//TODO: this is source of errors to just discard nilly willy
-		reader.Discard(2) //discard carriage return
+		if _, err := reader.Discard(2); err != nil {
+			return "", nil, fmt.Errorf("failed to discard CRLF: %w", err)
+		}
 	}
 
-	command = strings.ToUpper(inputParts[0])
-	args = inputParts[1:]
-
-	return command, args, nil
-}
-
-func parseInput(input string) (command string, args []string, err error) {
-	const arrayChar byte = '*'
-	const bulkStringChar byte = '$'
-
-	if input[0] != arrayChar {
-		return "", nil, errors.New("input is not of type 'Array'")
-	}
-
-	splintInput := strings.Split(input, "\r\n")
-
-	arrLength, err := strconv.Atoi(splintInput[0][1:])
-	if err != nil {
-		return "", nil, errors.New("array length couldn't be parsed")
-	}
-
-	inputParts := make([]string, 0, arrLength)
-	for i := 1; i < arrLength*2; i += 2 {
-		if splintInput[i][0] != bulkStringChar {
-			return "", nil, errors.New("input is not of type 'String'")
-		}
-
-		strLength, err := strconv.Atoi(splintInput[i][1:])
-		if err != nil {
-			return "", nil, fmt.Errorf("string length parse: %w", err)
-		}
-
-		str := splintInput[i+1]
-		if len(str) != strLength {
-			return "", nil, errors.New("string did not have expected length")
-		}
-
-		inputParts = append(inputParts, str)
+	if len(inputParts) == 0 {
+		return "", nil, errors.New("no command found")
 	}
 
 	command = strings.ToUpper(inputParts[0])
