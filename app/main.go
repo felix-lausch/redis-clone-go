@@ -74,7 +74,9 @@ func handleConnection(conn net.Conn) {
 }
 
 func parseInput(i string) (command string, args []string, err error) {
-	inputType := string(i[0])
+	if string(i[0]) != "*" {
+		return "", nil, errors.New("input is not of type 'Array'")
+	}
 	//detect type -> the first byte indicates the type
 
 	// fmt.Println(i)
