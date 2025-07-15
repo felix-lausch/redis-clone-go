@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -40,12 +41,15 @@ func handleConnection(conn net.Conn) {
 	for {
 		buffer := make([]byte, 256)
 
-		//TODO: fix infinite EOF + read loop error //improve connection reading
 		n, err := conn.Read(buffer)
-		if err != nil {
+		if err == io.EOF {
+			fmt.Println("client disconnected")
+			return
+		} else if err != nil {
 			fmt.Println("Error reading from connection: ", err.Error())
 			continue
 		}
+
 		msg := string(buffer[:n])
 
 		//parse command and args
