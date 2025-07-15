@@ -79,7 +79,7 @@ func parseInput(i string) (command string, args []string, err error) {
 	}
 	//detect type -> the first byte indicates the type
 
-	// fmt.Println(i)
+	// test
 	splintInput := strings.Split(strings.TrimSpace(i), " ")
 
 	//parse command
