@@ -1,11 +1,11 @@
 package main
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -33,31 +33,24 @@ func main() {
 		fmt.Println("client connected")
 		go handleConnection(conn)
 	}
-
-	fmt.Println("closing program..")
 }
 
 func handleConnection(conn net.Conn) {
 	for {
-		reader := bufio.NewReader(conn)
+		buffer := make([]byte, 256)
 
-		msg, err := reader.ReadString('\n')
+		//TODO: fix infinite EOF + read loop error //improve connection reading
+		n, err := conn.Read(buffer)
 		if err != nil {
 			fmt.Println("Error reading from connection: ", err.Error())
 			continue
 		}
-
-		// msg := make([]byte, 256)
-
-		// n, err := conn.Read(msg)
-		// if err != nil {
-		// 	fmt.Println("Error reading from connection: ", err.Error())
-		// 	continue
-		// }
+		msg := string(buffer[:n])
 
 		//parse command and args
 		command, args, err := parseInput(msg)
 		if err != nil {
+			fmt.Println("Error parsing input: ", err.Error())
 			conn.Write([]byte("-ERROR input could not be parsed\r\n"))
 			continue
 		}
@@ -67,27 +60,47 @@ func handleConnection(conn net.Conn) {
 		if err != nil {
 			conn.Write(fmt.Appendf(nil, "-ERROR %v\r\n", err))
 		}
-		fmt.Println(command)
 
 		conn.Write(response)
 	}
 }
 
-func parseInput(i string) (command string, args []string, err error) {
-	if string(i[0]) != "*" {
+func parseInput(input string) (command string, args []string, err error) {
+	const arrayChar byte = '*'
+	const bulkStringChar byte = '$'
+
+	if input[0] != arrayChar {
 		return "", nil, errors.New("input is not of type 'Array'")
 	}
-	//detect type -> the first byte indicates the type
 
-	// test
-	splintInput := strings.Split(strings.TrimSpace(i), " ")
+	splintInput := strings.Split(input, "\r\n")
 
-	//parse command
-	command = strings.ToUpper(splintInput[0])
-	fmt.Println(command)
+	arrLength, err := strconv.Atoi(splintInput[0][1:])
+	if err != nil {
+		return "", nil, errors.New("array length couldn't be parsed")
+	}
 
-	//parse args
-	args = splintInput[1:]
+	inputParts := make([]string, 0, arrLength)
+	for i := 1; i < arrLength*2; i += 2 {
+		if splintInput[i][0] != bulkStringChar {
+			return "", nil, errors.New("input is not of type 'String'")
+		}
+
+		strLength, err := strconv.Atoi(splintInput[i][1:])
+		if err != nil {
+			return "", nil, fmt.Errorf("string length parse: %w", err)
+		}
+
+		str := splintInput[i+1]
+		if len(str) != strLength {
+			return "", nil, errors.New("string did not have expected length")
+		}
+
+		inputParts = append(inputParts, str)
+	}
+
+	command = strings.ToUpper(inputParts[0])
+	args = inputParts[1:]
 
 	return command, args, nil
 }
@@ -96,7 +109,7 @@ func handleCommand(command string, args []string) ([]byte, error) {
 	switch command {
 	case "PING":
 		{
-			return []byte("+PONG\r\n"), nil
+			return formatSimpleString("PONG"), nil
 		}
 	case "ECHO":
 		{
@@ -104,11 +117,19 @@ func handleCommand(command string, args []string) ([]byte, error) {
 				return nil, errors.New("wrong number of arguments for command")
 			}
 
-			return fmt.Appendf(nil, "%v \"%v\"\r\n", command, args[0]), nil
+			return formatBulkString(args[0]), nil
 		}
 	default:
 		{
 			return nil, fmt.Errorf("unkown command '%v'", command)
 		}
 	}
+}
+
+func formatSimpleString(input string) []byte {
+	return fmt.Appendf(nil, "+%v\r\n", input)
+}
+
+func formatBulkString(input string) []byte {
+	return fmt.Appendf(nil, "$%v\r\n%v\r\n", len(input), input)
 }
