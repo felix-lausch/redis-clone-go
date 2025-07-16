@@ -2,14 +2,10 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
-	"strconv"
-	"strings"
-	"time"
 )
 
 var cm = &ConcurrentMap{
@@ -44,7 +40,7 @@ func handleConnection(conn net.Conn) {
 	reader := bufio.NewReader(conn)
 
 	for {
-		command, args, err := parseResp(reader)
+		command, err := parseResp(reader)
 		if err == io.EOF {
 			fmt.Println("client disconnected")
 			return
@@ -53,7 +49,7 @@ func handleConnection(conn net.Conn) {
 			continue
 		}
 
-		response, err := handleCommand(command, args)
+		response, err := handleCommand(command)
 		if err != nil {
 			conn.Write(fmt.Appendf(nil, "-ERROR %v\r\n", err))
 		}
@@ -62,160 +58,17 @@ func handleConnection(conn net.Conn) {
 	}
 }
 
-// TODO: parsing logic should be moved to its own file and could most likely be refactored
-func parseResp(reader *bufio.Reader) (command string, args []string, err error) {
-	const arrayIndicator byte = '*'
-
-	arrLen, err := parseTypeInfo(reader, arrayIndicator)
-	if err == io.EOF {
-		return "", nil, err
-	} else if err != nil {
-		return "", nil, errors.New("error parsing type information")
-	}
-
-	command, args, err = parseBulkStringArray(reader, arrLen)
-	if err != nil {
-		return "", nil, fmt.Errorf("error parsing bulk string array: %w", err)
-	}
-
-	return command, args, nil
-}
-
-func parseTypeInfo(reader *bufio.Reader, expectedTypeIndicator byte) (int, error) {
-	typeIndicator, err := reader.ReadByte()
-	if err == io.EOF {
-		return 0, err
-	} else if err != nil {
-		return 0, errors.New("error reading first byte")
-	}
-
-	if typeIndicator != expectedTypeIndicator {
-		return 0, errors.New("input is not of type 'Array'")
-	}
-
-	lengthStr, err := reader.ReadString('\n')
-	if err != nil {
-		return 0, errors.New("error reading array length")
-	}
-
-	length, err := strconv.Atoi(strings.TrimSuffix(lengthStr, "\r\n"))
-	if err != nil {
-		return 0, errors.New("array length couldn't be parsed")
-	}
-
-	return length, nil
-}
-
-func parseBulkStringArray(reader *bufio.Reader, length int) (command string, args []string, err error) {
-	const bulkStringIndicator byte = '$'
-
-	inputParts := make([]string, 0, length)
-
-	for range length {
-		strLength, err := parseTypeInfo(reader, bulkStringIndicator)
-		if err != nil {
-			return "", nil, errors.New("error parsing type information")
-		}
-
-		stringBuffer := make([]byte, strLength)
-		_, err = io.ReadFull(reader, stringBuffer)
-		if err != nil {
-			return "", nil, fmt.Errorf("error reading bulk string: %w", err)
-		}
-
-		inputParts = append(inputParts, string(stringBuffer))
-
-		if _, err := reader.Discard(2); err != nil {
-			return "", nil, fmt.Errorf("failed to discard CRLF: %w", err)
-		}
-	}
-
-	if len(inputParts) == 0 {
-		return "", nil, errors.New("no command found")
-	}
-
-	command = strings.ToUpper(inputParts[0])
-	args = inputParts[1:]
-
-	return command, args, nil
-}
-
-func handleCommand(command string, args []string) ([]byte, error) {
-	switch command {
+func handleCommand(command *Command) ([]byte, error) {
+	switch command.Name {
 	case "PING":
 		return ping()
 	case "ECHO":
-		return echo(args)
+		return echo(command.Args)
 	case "SET":
-		return set(args)
+		return set(command.Args)
 	case "GET":
-		return get(args)
+		return get(command.Args)
 	default:
 		return nil, fmt.Errorf("unkown command '%v'", command)
 	}
-}
-
-func ping() ([]byte, error) {
-	return formatSimpleString("PONG"), nil
-}
-
-func echo(args []string) ([]byte, error) {
-	if len(args) != 1 {
-		return nil, errors.New("wrong number of arguments for command")
-	}
-
-	return formatBulkString(args[0]), nil
-}
-
-func set(args []string) ([]byte, error) {
-	if len(args) < 2 {
-		return nil, errors.New("wrong number of arguments for command")
-	}
-
-	expiresBy := int64(-1)
-	if len(args) == 4 {
-		if strings.ToUpper(args[2]) != "PX" {
-			return nil, fmt.Errorf("unknown argument: %v", args[2])
-		}
-
-		ms, err := strconv.ParseInt(args[3], 10, 64)
-		if err != nil {
-			return nil, errors.New("expire time couldn't be parsed")
-		}
-
-		expiresBy = time.Now().UnixMilli() + ms
-	}
-
-	cm.Set(args[0], StoredValue{args[1], expiresBy})
-	return formatSimpleString("OK"), nil
-}
-
-func get(args []string) ([]byte, error) {
-	if len(args) != 1 {
-		return nil, errors.New("wrong number of arguments for command")
-	}
-
-	storedValue, ok := cm.Get(args[0])
-	if !ok {
-		return formatNullBulkString(), nil
-	} else if storedValue.expiresBy != -1 && time.Now().UnixMilli() > storedValue.expiresBy {
-		fmt.Println("tried to access expired value")
-		cm.Delete(args[0])
-
-		return formatNullBulkString(), nil
-	}
-
-	return formatBulkString(storedValue.val), nil
-}
-
-func formatSimpleString(input string) []byte {
-	return fmt.Appendf(nil, "+%v\r\n", input)
-}
-
-func formatBulkString(input string) []byte {
-	return fmt.Appendf(nil, "$%v\r\n%v\r\n", len(input), input)
-}
-
-func formatNullBulkString() []byte {
-	return []byte("$-1\r\n")
 }
