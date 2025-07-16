@@ -12,7 +12,9 @@ import (
 	"time"
 )
 
-var kvStore = make(map[string]StoredValue)
+var cm = &ConcurrentMap{
+	db: make(map[string]StoredValue),
+}
 
 func main() {
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
@@ -138,68 +140,72 @@ func parseBulkStringArray(reader *bufio.Reader, length int) (command string, arg
 	return command, args, nil
 }
 
-// TODO: this method needs to be refactored. the command execution should be a seperate function every time.
 func handleCommand(command string, args []string) ([]byte, error) {
 	switch command {
 	case "PING":
-		{
-			return formatSimpleString("PONG"), nil
-		}
+		return ping()
 	case "ECHO":
-		{
-			if len(args) != 1 {
-				return nil, errors.New("wrong number of arguments for command")
-			}
-
-			return formatBulkString(args[0]), nil
-		}
-		//TODO: for set and get i need to handle race conditions and concurrency
+		return echo(args)
 	case "SET":
-		{
-			if len(args) < 2 {
-				return nil, errors.New("wrong number of arguments for command")
-			}
-
-			expiresBy := int64(-1)
-			if len(args) == 4 {
-				if strings.ToUpper(args[2]) != "PX" {
-					return nil, fmt.Errorf("unknown argument: %v", args[2])
-				}
-
-				ms, err := strconv.ParseInt(args[3], 10, 64)
-				if err != nil {
-					return nil, errors.New("expire time couldn't be parsed")
-				}
-
-				expiresBy = time.Now().UnixMilli() + ms
-			}
-
-			kvStore[args[0]] = *NewStoredValue(args[1], expiresBy)
-			return formatSimpleString("OK"), nil
-		}
+		return set(args)
 	case "GET":
-		{
-			if len(args) != 1 {
-				return nil, errors.New("wrong number of arguments for command")
-			}
-
-			storedValue, ok := kvStore[args[0]]
-			if !ok {
-				return formatNullBulkString(), nil
-			} else if storedValue.expiresBy != -1 && time.Now().UnixMilli() > storedValue.expiresBy {
-				fmt.Println("tried to access expired value")
-				delete(kvStore, args[0])
-
-				return formatNullBulkString(), nil
-			}
-
-			return formatBulkString(storedValue.val), nil
-		}
+		return get(args)
 	default:
-		{
-			return nil, fmt.Errorf("unkown command '%v'", command)
-		}
+		return nil, fmt.Errorf("unkown command '%v'", command)
 	}
+}
+
+func ping() ([]byte, error) {
+	return formatSimpleString("PONG"), nil
+}
+
+func echo(args []string) ([]byte, error) {
+	if len(args) != 1 {
+		return nil, errors.New("wrong number of arguments for command")
+	}
+
+	return formatBulkString(args[0]), nil
+}
+
+func set(args []string) ([]byte, error) {
+	if len(args) < 2 {
+		return nil, errors.New("wrong number of arguments for command")
+	}
+
+	expiresBy := int64(-1)
+	if len(args) == 4 {
+		if strings.ToUpper(args[2]) != "PX" {
+			return nil, fmt.Errorf("unknown argument: %v", args[2])
+		}
+
+		ms, err := strconv.ParseInt(args[3], 10, 64)
+		if err != nil {
+			return nil, errors.New("expire time couldn't be parsed")
+		}
+
+		expiresBy = time.Now().UnixMilli() + ms
+	}
+
+	cm.Set(args[0], StoredValue{args[1], expiresBy})
+	return formatSimpleString("OK"), nil
+}
+
+func get(args []string) ([]byte, error) {
+	if len(args) != 1 {
+		return nil, errors.New("wrong number of arguments for command")
+	}
+
+	storedValue, ok := cm.Get(args[0])
+	if !ok {
+		return formatNullBulkString(), nil
+	} else if storedValue.expiresBy != -1 && time.Now().UnixMilli() > storedValue.expiresBy {
+		fmt.Println("tried to access expired value")
+		cm.Delete(args[0])
+
+		return formatNullBulkString(), nil
+	}
+
+	return formatBulkString(storedValue.val), nil
 }
 
 func formatSimpleString(input string) []byte {
@@ -212,13 +218,4 @@ func formatBulkString(input string) []byte {
 
 func formatNullBulkString() []byte {
 	return []byte("$-1\r\n")
-}
-
-type StoredValue struct {
-	val       string
-	expiresBy int64
-}
-
-func NewStoredValue(v string, exp int64) *StoredValue {
-	return &StoredValue{val: v, expiresBy: exp}
 }
