@@ -17,6 +17,7 @@ type Command struct {
 func parseResp(reader *bufio.Reader) (*Command, error) {
 	const arrayIndicator byte = '*'
 
+	//TODO: figure out better way to handle error wrapping
 	arrLen, err := parseTypeInfo(reader, arrayIndicator)
 	if err == io.EOF {
 		return nil, err
