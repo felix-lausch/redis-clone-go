@@ -64,25 +64,11 @@ func handleConnection(conn net.Conn) {
 func parseResp(reader *bufio.Reader) (command string, args []string, err error) {
 	const arrayIndicator byte = '*'
 
-	typeIndicator, err := reader.ReadByte()
+	arrLen, err := parseTypeInfo(reader, arrayIndicator)
 	if err == io.EOF {
 		return "", nil, err
 	} else if err != nil {
-		return "", nil, errors.New("error reading first byte")
-	}
-
-	if typeIndicator != arrayIndicator {
-		return "", nil, errors.New("input is not of type 'Array'")
-	}
-
-	arrayLengthStr, err := reader.ReadString('\n')
-	if err != nil {
-		return "", nil, errors.New("error reading array length")
-	}
-
-	arrLen, err := strconv.Atoi(strings.TrimSuffix(arrayLengthStr, "\r\n"))
-	if err != nil {
-		return "", nil, errors.New("array length couldn't be parsed")
+		return "", nil, errors.New("error parsing type information")
 	}
 
 	command, args, err = parseBulkStringArray(reader, arrLen)
@@ -93,29 +79,40 @@ func parseResp(reader *bufio.Reader) (command string, args []string, err error) 
 	return command, args, nil
 }
 
+func parseTypeInfo(reader *bufio.Reader, expectedTypeIndicator byte) (int, error) {
+	typeIndicator, err := reader.ReadByte()
+	if err == io.EOF {
+		return 0, err
+	} else if err != nil {
+		return 0, errors.New("error reading first byte")
+	}
+
+	if typeIndicator != expectedTypeIndicator {
+		return 0, errors.New("input is not of type 'Array'")
+	}
+
+	lengthStr, err := reader.ReadString('\n')
+	if err != nil {
+		return 0, errors.New("error reading array length")
+	}
+
+	length, err := strconv.Atoi(strings.TrimSuffix(lengthStr, "\r\n"))
+	if err != nil {
+		return 0, errors.New("array length couldn't be parsed")
+	}
+
+	return length, nil
+}
+
 func parseBulkStringArray(reader *bufio.Reader, length int) (command string, args []string, err error) {
 	const bulkStringIndicator byte = '$'
 
 	inputParts := make([]string, 0, length)
 
 	for range length {
-		typeIndicator, err := reader.ReadByte()
+		strLength, err := parseTypeInfo(reader, bulkStringIndicator)
 		if err != nil {
-			return "", nil, errors.New("error reading type byte")
-		}
-
-		if typeIndicator != bulkStringIndicator {
-			return "", nil, errors.New("input is not of type 'Bulk string'")
-		}
-
-		stringLengthStr, err := reader.ReadString('\n')
-		if err != nil {
-			return "", nil, errors.New("error reading bulk string length")
-		}
-
-		strLength, err := strconv.Atoi(strings.TrimSuffix(stringLengthStr, "\r\n"))
-		if err != nil {
-			return "", nil, fmt.Errorf("bulk string length parse: %w", err)
+			return "", nil, errors.New("error parsing type information")
 		}
 
 		stringBuffer := make([]byte, strLength)
