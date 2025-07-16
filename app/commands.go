@@ -72,3 +72,7 @@ func formatBulkString(input string) []byte {
 func formatNullBulkString() []byte {
 	return []byte("$-1\r\n")
 }
+
+func formatError(err error) []byte {
+	return fmt.Appendf(nil, "-ERROR %v\r\n", err)
+}

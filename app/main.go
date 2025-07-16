@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -41,17 +42,19 @@ func handleConnection(conn net.Conn) {
 
 	for {
 		command, err := parseResp(reader)
-		if err == io.EOF {
-			fmt.Println("client disconnected")
-			return
-		} else if err != nil {
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				fmt.Println("client disconnected")
+				return
+			}
+
 			fmt.Println("Error reading from connection: ", err.Error())
 			continue
 		}
 
 		response, err := handleCommand(command)
 		if err != nil {
-			conn.Write(fmt.Appendf(nil, "-ERROR %v\r\n", err))
+			conn.Write(formatError(err))
 		}
 
 		conn.Write(response)

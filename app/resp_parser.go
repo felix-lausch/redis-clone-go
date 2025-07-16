@@ -17,12 +17,9 @@ type Command struct {
 func parseResp(reader *bufio.Reader) (*Command, error) {
 	const arrayIndicator byte = '*'
 
-	//TODO: figure out better way to handle error wrapping
 	arrLen, err := parseTypeInfo(reader, arrayIndicator)
-	if err == io.EOF {
-		return nil, err
-	} else if err != nil {
-		return nil, errors.New("error parsing type information")
+	if err != nil {
+		return nil, errorParseTypeInfo(err)
 	}
 
 	command, err := parseBulkStringArray(reader, arrLen)
@@ -35,24 +32,22 @@ func parseResp(reader *bufio.Reader) (*Command, error) {
 
 func parseTypeInfo(reader *bufio.Reader, expectedTypeIndicator byte) (int, error) {
 	typeIndicator, err := reader.ReadByte()
-	if err == io.EOF {
-		return 0, err
-	} else if err != nil {
-		return 0, errors.New("error reading first byte")
+	if err != nil {
+		return 0, fmt.Errorf("error reading type header: %w", err)
 	}
 
 	if typeIndicator != expectedTypeIndicator {
-		return 0, errors.New("input is not of type 'Array'")
+		return 0, fmt.Errorf("input is not of type %q", expectedTypeIndicator)
 	}
 
 	lengthStr, err := reader.ReadString('\n')
 	if err != nil {
-		return 0, errors.New("error reading array length")
+		return 0, fmt.Errorf("error reading type length: %w", err)
 	}
 
 	length, err := strconv.Atoi(strings.TrimSuffix(lengthStr, "\r\n"))
 	if err != nil {
-		return 0, errors.New("array length couldn't be parsed")
+		return 0, fmt.Errorf("type length couldn't be parsed: %w", err)
 	}
 
 	return length, nil
@@ -61,12 +56,16 @@ func parseTypeInfo(reader *bufio.Reader, expectedTypeIndicator byte) (int, error
 func parseBulkStringArray(reader *bufio.Reader, length int) (*Command, error) {
 	const bulkStringIndicator byte = '$'
 
+	if length <= 0 {
+		return nil, fmt.Errorf("invalid length: %d", length)
+	}
+
 	inputParts := make([]string, 0, length)
 
 	for range length {
 		strLength, err := parseTypeInfo(reader, bulkStringIndicator)
 		if err != nil {
-			return nil, errors.New("error parsing type information")
+			return nil, errorParseTypeInfo(err)
 		}
 
 		stringBuffer := make([]byte, strLength)
@@ -89,4 +88,8 @@ func parseBulkStringArray(reader *bufio.Reader, length int) (*Command, error) {
 	return &Command{
 		strings.ToUpper(inputParts[0]),
 		inputParts[1:]}, nil
+}
+
+func errorParseTypeInfo(err error) error {
+	return fmt.Errorf("error parsing type information: %w", err)
 }
