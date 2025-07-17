@@ -168,8 +168,16 @@ func lpop(args []string) ([]byte, error) {
 		return nil, errArgNumber
 	}
 
-	//TODO: handle count
-	//count := 1
+	count := 1
+
+	if len(args) == 2 {
+		argCount, err := strconv.Atoi(args[1])
+		if err != nil {
+			return nil, errors.New("count could not be parsed")
+		}
+
+		count = argCount
+	}
 
 	storedValue, ok := cm.Get(args[0])
 	if !ok || len(storedValue.lval) == 0 {
@@ -180,11 +188,19 @@ func lpop(args []string) ([]byte, error) {
 		return nil, errWrongtypeOperation
 	}
 
-	result := storedValue.lval[0]
-	storedValue.lval = storedValue.lval[1:]
+	if count > len(storedValue.lval) {
+		count = len(storedValue.lval)
+	}
+
+	result := storedValue.lval[0:count]
+	storedValue.lval = storedValue.lval[count:]
 	cm.Set(args[0], storedValue)
 
-	return formatBulkString(result), nil
+	if len(args) == 1 {
+		return formatBulkString(result[0]), nil
+	}
+
+	return formatBulkStringArray(result), nil
 }
 
 func getLRangeSlice(start, stop int, array []string) []string {
