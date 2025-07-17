@@ -9,8 +9,18 @@ import (
 	"os"
 )
 
-var cm = &ConcurrentMap{
+var cm = &ConcurrentMap[StoredValue]{
 	db: make(map[string]StoredValue),
+}
+
+// TODO: i can probably add an array of listeners inside the StoredValue struct
+// then when it is retrieved during an update, the first listener in the array will get the value and be popped
+// var listeners = &ConcurrentMap[[]Listener]{
+// 	db: make(map[string][]Listener),
+// }
+
+type Listener struct {
+	c chan string
 }
 
 func main() {
@@ -81,6 +91,8 @@ func handleCommand(command *Command) ([]byte, error) {
 		return llen(command.Args)
 	case "LPOP":
 		return lpop(command.Args)
+	case "BLPOP":
+		return blpop(command.Args)
 	default:
 		return nil, fmt.Errorf("unkown command '%v'", command.Name)
 	}

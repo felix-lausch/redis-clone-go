@@ -11,26 +11,25 @@ type StoredValue struct {
 	expiresBy int64
 }
 
-type ConcurrentMap struct {
+type ConcurrentMap[T any] struct {
 	mu sync.RWMutex
-	db map[string]StoredValue
+	db map[string]T
 }
 
-func (cm *ConcurrentMap) Set(key string, val StoredValue) {
+func (cm *ConcurrentMap[T]) Set(key string, val T) {
 	cm.mu.Lock()
 	cm.db[key] = val
 	cm.mu.Unlock()
 }
 
-func (cm *ConcurrentMap) Get(key string) (val StoredValue, ok bool) {
+func (cm *ConcurrentMap[T]) Get(key string) (val T, ok bool) {
 	cm.mu.RLock()
 	val, ok = cm.db[key]
 	cm.mu.RUnlock()
-
 	return val, ok
 }
 
-func (cm *ConcurrentMap) Delete(key string) {
+func (cm *ConcurrentMap[T]) Delete(key string) {
 	cm.mu.Lock()
 	delete(cm.db, key)
 	cm.mu.Unlock()
