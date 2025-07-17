@@ -118,11 +118,11 @@ func lrange(args []string) ([]byte, error) {
 func getLRangeSlice(start, stop int, array []string) []string {
 	//translate negative indices to positive ones
 	if start < 0 {
-		start += len(array)
+		start = max(0, start+len(array))
 	}
 
 	if stop < 0 {
-		stop += len(array)
+		stop = max(0, stop+len(array))
 	}
 
 	if start > len(array) || start > stop {
@@ -164,4 +164,18 @@ func formatBulkStringArray(elements []string) []byte {
 
 func formatError(err error) []byte {
 	return fmt.Appendf(nil, "-ERROR %v\r\n", err)
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
