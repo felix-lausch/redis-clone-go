@@ -125,11 +125,16 @@ func getLRangeSlice(start, stop int, array []string) []string {
 		stop = max(0, stop+len(array))
 	}
 
+	//return early if start is nonsensical
 	if start > len(array) || start > stop {
 		return []string{}
 	}
 
-	return array[start : stop+1]
+	//ensure upper bounds
+	start = min(len(array), start)
+	stop = min(len(array), stop)
+
+	return array[start:stop]
 }
 
 func formatSimpleString(input string) []byte {
