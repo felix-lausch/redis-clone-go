@@ -146,6 +146,23 @@ func lrange(args []string) ([]byte, error) {
 	return formatBulkStringArray(lRangeSlice), nil
 }
 
+func llen(args []string) ([]byte, error) {
+	if len(args) != 1 {
+		return nil, errArgNumber
+	}
+
+	storedValue, ok := cm.Get(args[0])
+	if !ok {
+		return formatInt(0, false), nil
+	}
+
+	if !storedValue.isList {
+		return nil, errWrongtypeOperation
+	}
+
+	return formatInt(len(storedValue.lval), false), nil
+}
+
 func getLRangeSlice(start, stop int, array []string) []string {
 	//translate negative indices to positive ones
 	if start < 0 {

@@ -77,7 +77,9 @@ func handleCommand(command *Command) ([]byte, error) {
 		return lrange(command.Args)
 	case "LPUSH":
 		return lpush(command.Args)
+	case "LLEN":
+		return llen(command.Args)
 	default:
-		return nil, fmt.Errorf("unkown command '%v'", command)
+		return nil, fmt.Errorf("unkown command '%v'", command.Name)
 	}
 }
