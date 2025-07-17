@@ -97,17 +97,13 @@ func lrange(args []string) ([]byte, error) {
 		return nil, errors.New("lrange start couldn't be parsed")
 	}
 
-	if start < 0 {
-		start = 0
-	}
-
 	stop, err := strconv.Atoi(args[2])
 	if err != nil {
 		return nil, errors.New("lrange stop couldn't be parsed")
 	}
 
 	storedValue, ok := cm.Get(args[0])
-	if !ok || start > stop {
+	if !ok {
 		return formatBulkStringArray([]string{}), nil
 	}
 
@@ -115,15 +111,25 @@ func lrange(args []string) ([]byte, error) {
 		return nil, errWrongtypeOperation
 	}
 
-	if start > len(storedValue.lval)-1 {
-		return formatBulkStringArray([]string{}), nil
+	lRangeSlice := getLRangeSlice(start, stop, storedValue.lval)
+	return formatBulkStringArray(lRangeSlice), nil
+}
+
+func getLRangeSlice(start, stop int, array []string) []string {
+	//translate negative indices to positive ones
+	if start < 0 {
+		start += len(array)
 	}
 
-	if stop > (len(storedValue.lval) - 1) {
-		stop = len(storedValue.lval) - 1
+	if stop < 0 {
+		stop += len(array)
 	}
 
-	return formatBulkStringArray(storedValue.lval[start : stop+1]), nil
+	if start > len(array) || start > stop {
+		return []string{}
+	}
+
+	return array[start : stop+1]
 }
 
 func formatSimpleString(input string) []byte {
