@@ -104,19 +104,18 @@ func lpush(args []string) ([]byte, error) {
 		return nil, errWrongtypeOperation
 	}
 
-	storedValue.lval = append(storedValue.lval, reverseArray(args[1:])...)
+	storedValue.lval = append(reverseArray(args[1:]), storedValue.lval...)
 	cm.Set(args[0], storedValue)
 
 	return formatInt(len(storedValue.lval), false), nil
 }
 
 func reverseArray(array []string) []string {
-	reversed := array[1:]
-	for i, j := 0, len(reversed)-1; i < j; i, j = i+1, j-1 {
-		reversed[i], reversed[j] = reversed[j], reversed[i]
+	for i, j := 0, len(array)-1; i < j; i, j = i+1, j-1 {
+		array[i], array[j] = array[j], array[i]
 	}
 
-	return reversed
+	return array
 }
 
 func lrange(args []string) ([]byte, error) {
