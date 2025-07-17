@@ -132,9 +132,9 @@ func getLRangeSlice(start, stop int, array []string) []string {
 
 	//ensure upper bounds
 	start = min(len(array), start)
-	stop = min(len(array), stop)
+	stop = min(len(array)-1, stop)
 
-	return array[start:stop]
+	return array[start : stop+1]
 }
 
 func formatSimpleString(input string) []byte {
