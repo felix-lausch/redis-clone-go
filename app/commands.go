@@ -163,6 +163,30 @@ func llen(args []string) ([]byte, error) {
 	return formatInt(len(storedValue.lval), false), nil
 }
 
+func lpop(args []string) ([]byte, error) {
+	if len(args) < 1 || len(args) > 2 {
+		return nil, errArgNumber
+	}
+
+	//TODO: handle count
+	//count := 1
+
+	storedValue, ok := cm.Get(args[0])
+	if !ok || len(storedValue.lval) == 0 {
+		return formatNullBulkString(), nil
+	}
+
+	if !storedValue.isList {
+		return nil, errWrongtypeOperation
+	}
+
+	result := storedValue.lval[0]
+	storedValue.lval = storedValue.lval[1:]
+	cm.Set(args[0], storedValue)
+
+	return formatBulkString(result), nil
+}
+
 func getLRangeSlice(start, stop int, array []string) []string {
 	//translate negative indices to positive ones
 	if start < 0 {

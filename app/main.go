@@ -79,6 +79,8 @@ func handleCommand(command *Command) ([]byte, error) {
 		return lpush(command.Args)
 	case "LLEN":
 		return llen(command.Args)
+	case "LPOP":
+		return lpop(command.Args)
 	default:
 		return nil, fmt.Errorf("unkown command '%v'", command.Name)
 	}
