@@ -87,6 +87,45 @@ func rpush(args []string) ([]byte, error) {
 	return formatInt(len(storedValue.lval), false), nil
 }
 
+func lrange(args []string) ([]byte, error) {
+	if len(args) != 3 {
+		return nil, errArgNumber
+	}
+
+	start, err := strconv.Atoi(args[1])
+	if err != nil {
+		return nil, errors.New("lrange start couldn't be parsed")
+	}
+
+	if start < 0 {
+		start = 0
+	}
+
+	stop, err := strconv.Atoi(args[2])
+	if err != nil {
+		return nil, errors.New("lrange stop couldn't be parsed")
+	}
+
+	storedValue, ok := cm.Get(args[0])
+	if !ok || start > stop {
+		return formatBulkStringArray([]string{}), nil
+	}
+
+	if !storedValue.isList {
+		return nil, errWrongtypeOperation
+	}
+
+	if start > len(storedValue.lval)-1 {
+		return formatBulkStringArray([]string{}), nil
+	}
+
+	if stop > (len(storedValue.lval) - 1) {
+		stop = len(storedValue.lval) - 1
+	}
+
+	return formatBulkStringArray(storedValue.lval[start : stop+1]), nil
+}
+
 func formatSimpleString(input string) []byte {
 	return fmt.Appendf(nil, "+%v\r\n", input)
 }
@@ -105,6 +144,16 @@ func formatInt(num int, signed bool) []byte {
 	}
 
 	return fmt.Appendf(nil, ":%d\r\n", num)
+}
+
+func formatBulkStringArray(elements []string) []byte {
+	array := fmt.Appendf(nil, "*%v\r\n", len(elements))
+
+	for i := range elements {
+		array = append(array, formatBulkString(elements[i])...)
+	}
+
+	return array
 }
 
 func formatError(err error) []byte {
