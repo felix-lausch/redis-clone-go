@@ -6,6 +6,8 @@ import (
 
 type StoredValue struct {
 	val       string
+	lval      []string
+	isList    bool
 	expiresBy int64
 }
 

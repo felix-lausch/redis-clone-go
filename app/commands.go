@@ -8,13 +8,16 @@ import (
 	"time"
 )
 
+var errWrongtypeOperation = errors.New("WRONGTYPE Operation against a key holding the wrong kind of value")
+var errArgNumber = errors.New("wrong number of arguments for command")
+
 func ping() ([]byte, error) {
 	return formatSimpleString("PONG"), nil
 }
 
 func echo(args []string) ([]byte, error) {
 	if len(args) != 1 {
-		return nil, errors.New("wrong number of arguments for command")
+		return nil, errArgNumber
 	}
 
 	return formatBulkString(args[0]), nil
@@ -22,7 +25,7 @@ func echo(args []string) ([]byte, error) {
 
 func set(args []string) ([]byte, error) {
 	if len(args) < 2 {
-		return nil, errors.New("wrong number of arguments for command")
+		return nil, errArgNumber
 	}
 
 	expiresBy := int64(-1)
@@ -39,18 +42,20 @@ func set(args []string) ([]byte, error) {
 		expiresBy = time.Now().UnixMilli() + ms
 	}
 
-	cm.Set(args[0], StoredValue{args[1], expiresBy})
+	cm.Set(args[0], StoredValue{args[1], nil, false, expiresBy})
 	return formatSimpleString("OK"), nil
 }
 
 func get(args []string) ([]byte, error) {
 	if len(args) != 1 {
-		return nil, errors.New("wrong number of arguments for command")
+		return nil, errArgNumber
 	}
 
 	storedValue, ok := cm.Get(args[0])
 	if !ok {
 		return formatNullBulkString(), nil
+	} else if storedValue.isList {
+		return nil, errWrongtypeOperation
 	} else if storedValue.expiresBy != -1 && time.Now().UnixMilli() > storedValue.expiresBy {
 		fmt.Println("tried to access expired value")
 		cm.Delete(args[0])
@@ -59,6 +64,25 @@ func get(args []string) ([]byte, error) {
 	}
 
 	return formatBulkString(storedValue.val), nil
+}
+
+func rpush(args []string) ([]byte, error) {
+	if len(args) < 2 {
+		return nil, errArgNumber
+	}
+
+	storedValue, ok := cm.Get(args[0])
+	if !ok {
+		cm.Set(args[0], StoredValue{"", args[1:], true, -1})
+		return formatInt(len(args[1:]), false), nil
+	}
+
+	if !storedValue.isList {
+		return nil, errWrongtypeOperation
+	}
+
+	storedValue.lval = append(storedValue.lval, args[1:]...)
+	return formatInt(len(storedValue.lval), false), nil
 }
 
 func formatSimpleString(input string) []byte {
@@ -71,6 +95,14 @@ func formatBulkString(input string) []byte {
 
 func formatNullBulkString() []byte {
 	return []byte("$-1\r\n")
+}
+
+func formatInt(num int, signed bool) []byte {
+	if signed {
+		return fmt.Appendf(nil, ":%+d\r\n", num)
+	}
+
+	return fmt.Appendf(nil, ":%d\r\n", num)
 }
 
 func formatError(err error) []byte {
