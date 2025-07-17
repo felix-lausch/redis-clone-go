@@ -87,6 +87,38 @@ func rpush(args []string) ([]byte, error) {
 	return formatInt(len(storedValue.lval), false), nil
 }
 
+func lpush(args []string) ([]byte, error) {
+	if len(args) < 2 {
+		return nil, errArgNumber
+	}
+
+	storedValue, ok := cm.Get(args[0])
+	if !ok {
+		values := reverseArray(args[1:])
+
+		cm.Set(args[0], StoredValue{"", values, true, -1})
+		return formatInt(len(values), false), nil
+	}
+
+	if !storedValue.isList {
+		return nil, errWrongtypeOperation
+	}
+
+	storedValue.lval = append(storedValue.lval, reverseArray(args[1:])...)
+	cm.Set(args[0], storedValue)
+
+	return formatInt(len(storedValue.lval), false), nil
+}
+
+func reverseArray(array []string) []string {
+	reversed := array[1:]
+	for i, j := 0, len(reversed)-1; i < j; i, j = i+1, j-1 {
+		reversed[i], reversed[j] = reversed[j], reversed[i]
+	}
+
+	return reversed
+}
+
 func lrange(args []string) ([]byte, error) {
 	if len(args) != 3 {
 		return nil, errArgNumber
