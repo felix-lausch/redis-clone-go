@@ -82,6 +82,8 @@ func rpush(args []string) ([]byte, error) {
 	}
 
 	storedValue.lval = append(storedValue.lval, args[1:]...)
+	cm.Set(args[0], storedValue)
+
 	return formatInt(len(storedValue.lval), false), nil
 }
 
