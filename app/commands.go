@@ -54,9 +54,13 @@ func get(args []string) ([]byte, error) {
 	storedValue, ok := cm.Get(args[0])
 	if !ok {
 		return formatNullBulkString(), nil
-	} else if storedValue.isList {
+	}
+
+	if storedValue.isList {
 		return nil, errWrongtypeOperation
-	} else if storedValue.expiresBy != -1 && time.Now().UnixMilli() > storedValue.expiresBy {
+	}
+
+	if storedValue.expiresBy != -1 && time.Now().UnixMilli() > storedValue.expiresBy {
 		fmt.Println("tried to access expired value")
 		cm.Delete(args[0])
 
@@ -110,14 +114,6 @@ func lpush(args []string) ([]byte, error) {
 	return formatInt(len(storedValue.lval), false), nil
 }
 
-func reverseArray(array []string) []string {
-	for i, j := 0, len(array)-1; i < j; i, j = i+1, j-1 {
-		array[i], array[j] = array[j], array[i]
-	}
-
-	return array
-}
-
 func lrange(args []string) ([]byte, error) {
 	if len(args) != 3 {
 		return nil, errArgNumber
@@ -144,6 +140,28 @@ func lrange(args []string) ([]byte, error) {
 
 	lRangeSlice := getLRangeSlice(start, stop, storedValue.lval)
 	return formatBulkStringArray(lRangeSlice), nil
+}
+
+func getLRangeSlice(start, stop int, array []string) []string {
+	//translate negative indices to positive ones
+	if start < 0 {
+		start = max(0, start+len(array))
+	}
+
+	if stop < 0 {
+		stop = max(0, stop+len(array))
+	}
+
+	//return early if start is nonsensical
+	if start > len(array) || start > stop {
+		return []string{}
+	}
+
+	//ensure upper bounds
+	start = min(len(array), start)
+	stop = min(len(array)-1, stop)
+
+	return array[start : stop+1]
 }
 
 func llen(args []string) ([]byte, error) {
@@ -203,72 +221,43 @@ func lpop(args []string) ([]byte, error) {
 	return formatBulkStringArray(result), nil
 }
 
-func getLRangeSlice(start, stop int, array []string) []string {
-	//translate negative indices to positive ones
-	if start < 0 {
-		start = max(0, start+len(array))
+func blpop(args []string) ([]byte, error) {
+	if len(args) != 1 {
+		return nil, errArgNumber
 	}
 
-	if stop < 0 {
-		stop = max(0, stop+len(array))
+	storedValue, ok := cm.Get(args[0])
+	if !ok {
+		return formatNullBulkString(), nil
 	}
 
-	//return early if start is nonsensical
-	if start > len(array) || start > stop {
-		return []string{}
+	if !storedValue.isList {
+		return nil, errWrongtypeOperation
 	}
 
-	//ensure upper bounds
-	start = min(len(array), start)
-	stop = min(len(array)-1, stop)
+	if len(storedValue.lval) > 0 {
+		result := storedValue.lval[0]
+		storedValue.lval = storedValue.lval[1:]
+		cm.Set(args[0], storedValue)
 
-	return array[start : stop+1]
-}
-
-func formatSimpleString(input string) []byte {
-	return fmt.Appendf(nil, "+%v\r\n", input)
-}
-
-func formatBulkString(input string) []byte {
-	return fmt.Appendf(nil, "$%v\r\n%v\r\n", len(input), input)
-}
-
-func formatNullBulkString() []byte {
-	return []byte("$-1\r\n")
-}
-
-func formatInt(num int, signed bool) []byte {
-	if signed {
-		return fmt.Appendf(nil, ":%+d\r\n", num)
+		return formatBulkString(result), nil
 	}
 
-	return fmt.Appendf(nil, ":%d\r\n", num)
-}
+	//TODO: if the list in stored value is empty
+	// -> listen for incoming value
 
-func formatBulkStringArray(elements []string) []byte {
-	array := fmt.Appendf(nil, "*%v\r\n", len(elements))
+	//this probably has to be it's own goroutine and we need to be able to subscribe to a channel
+	//every time an item is added to any list (successful r/lpush) and 'event' needs to be sent
+	//if there are any listeners -> they receive the 'event' and act on it
 
-	for i := range elements {
-		array = append(array, formatBulkString(elements[i])...)
-	}
+	//TODO: this should happend in the push methods to all subscribers that are found in the db
+	// // Or with a fan-out loop:
+	// subscribers := []chan string{sub1, sub2}
+	// for _, ch := range subscribers {
+	// 	ch <- msg
+	// }
 
-	return array
-}
-
-func formatError(err error) []byte {
-	return fmt.Appendf(nil, "-ERROR %v\r\n", err)
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+	//TODO: here need to chreate channel, keep reference to it, save it to db and wait on it
+	//not sure if ref/value issues
+	return formatNullBulkString(), nil
 }
