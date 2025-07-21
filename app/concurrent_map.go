@@ -26,15 +26,15 @@ type ConcurrentMap[T any] struct {
 }
 
 func (cm *ConcurrentMap[T]) Set(key string, val T) {
-	cm.mu.Lock()
+	// cm.mu.Lock()
 	cm.db[key] = val
-	cm.mu.Unlock()
+	// cm.mu.Unlock()
 }
 
 func (cm *ConcurrentMap[T]) Get(key string) (val T, ok bool) {
-	cm.mu.RLock()
+	// cm.mu.RLock()
 	val, ok = cm.db[key]
-	cm.mu.RUnlock()
+	// cm.mu.RUnlock()
 	return val, ok
 }
 
