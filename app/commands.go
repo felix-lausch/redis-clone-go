@@ -292,7 +292,7 @@ func blpop(args []string) ([]byte, error) {
 	//TODO: is this not a concurrency issue? maybe it should be locked forthe whole operation?
 	storedValue, ok := cm.Get(args[0])
 	if !ok {
-		return formatNullBulkString(), nil
+		storedValue = StoredValue{"", []string{}, true, -1, nil}
 	}
 
 	if !storedValue.isList {
@@ -308,12 +308,11 @@ func blpop(args []string) ([]byte, error) {
 	}
 
 	c := make(chan string, 1)
-
 	storedValue.AddChannel(c)
 
 	cm.Set(args[0], storedValue)
 
-	//listen for incoming value
+	//await incoming value
 	result, ok := <-c
 	if !ok {
 		return nil, errors.New("error receiving value from list")
