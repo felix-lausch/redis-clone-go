@@ -276,7 +276,7 @@ func lpop(args []string) ([]byte, error) {
 }
 
 func blpop(args []string) ([]byte, error) {
-	//TODO: add multiple list and timeout args
+	//TODO: add multiple list args
 	if len(args) != 2 {
 		return nil, errArgNumber
 	}
@@ -304,7 +304,7 @@ func blpop(args []string) ([]byte, error) {
 		storedValue.lval = storedValue.lval[1:]
 		cm.Set(args[0], storedValue)
 
-		return formatBulkString(result), nil
+		return formatBulkStringArray([]string{args[0], result}), nil
 	}
 
 	c := make(chan string, 1)
@@ -314,10 +314,10 @@ func blpop(args []string) ([]byte, error) {
 	cm.Set(args[0], storedValue)
 
 	//listen for incoming value
-	val, ok := <-c
+	result, ok := <-c
 	if !ok {
 		return nil, errors.New("error receiving value from list")
 	}
 
-	return formatBulkString(val), nil
+	return formatBulkStringArray([]string{args[0], result}), nil
 }
