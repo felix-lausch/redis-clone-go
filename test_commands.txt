@@ -1,0 +1,28 @@
+printf '*3\r\n$3\r\nSET\r\n$5\r\nmykey\r\n$5\r\nmyval\r\n' | nc localhost 6379
+
+printf '*2\r\n$3\r\nGET\r\n$4\r\nlist\r\n' | nc localhost 6379
+
+printf '*5\r\n$3\r\nSET\r\n$6\r\nbanana\r\n$10\r\nstrawberry\r\n$2\r\npx\r\n$4\r\n5000\r\n' | nc localhost 6379
+
+printf '*3\r\n$5\r\nRPUSH\r\n$4\r\nlist\r\n$5\r\nberry\r\n' | nc localhost 6379
+
+printf '*2\r\n$4\r\nLLEN\r\n$4\r\nlist\r\n' | nc localhost 6379
+
+printf '*2\r\n$4\r\nLPOP\r\n$4\r\nlist\r\n' | nc localhost 6379
+printf '*3\r\n$4\r\nLPOP\r\n$4\r\nlist\r\n$1\r\n1\r\n' | nc localhost 6379
+
+printf '*3\r\n$5\r\nBLPOP\r\n$4\r\nlist\r\n$1\r\n0\r\n' | nc localhost 6379
+
+printf '*4\r\n$5\r\nRPUSH\r\n$4\r\nlist\r\n$5\r\nberry\r\n$3\r\nlol\r\n' | nc localhost 6379
+printf '*3\r\n$5\r\nRPUSH\r\n$4\r\nlist\r\n$5\r\nberry\r\n' | nc localhost 6379
+printf '*4\r\n$5\r\nLPUSH\r\n$4\r\nlist\r\n$5\r\nberry\r\n$3\r\nlol\r\n' | nc localhost 6379
+printf '*7\r\n$5\r\nRPUSH\r\n$4\r\nlist\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n$1\r\ne\r\n' | nc localhost 6379
+printf '*7\r\n$5\r\nLPUSH\r\n$4\r\nlist\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n$1\r\ne\r\n' | nc localhost 6379
+
+printf '*4\r\n$6\r\nLRANGE\r\n$4\r\nlist\r\n$1\r\n0\r\n$2\r\n-1\r\n' | nc localhost 6379
+printf '*4\r\n$6\r\nLRANGE\r\n$4\r\nlist\r\n$1\r\n0\r\n$1\r\n2\r\n' | nc localhost 6379
+
+printf '*3\r\n$5\r\nBLPOP\r\n$4\r\nlist\r\n$1\r\n0\r\n' | nc localhost 6379 &
+printf '*3\r\n$5\r\nBLPOP\r\n$4\r\nlist\r\n$1\r\n0\r\n' | nc localhost 6379 &
+printf '*3\r\n$5\r\nRPUSH\r\n$4\r\nlist\r\n$5\r\nberry\r\n' | nc localhost 6379 &
+wait

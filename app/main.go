@@ -13,16 +13,6 @@ var cm = &ConcurrentMap[StoredValue]{
 	db: make(map[string]StoredValue),
 }
 
-// TODO: i can probably add an array of listeners inside the StoredValue struct
-// then when it is retrieved during an update, the first listener in the array will get the value and be popped
-// var listeners = &ConcurrentMap[[]Listener]{
-// 	db: make(map[string][]Listener),
-// }
-
-type Listener struct {
-	c chan string
-}
-
 func main() {
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
 	if err != nil {
