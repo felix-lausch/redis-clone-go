@@ -226,6 +226,7 @@ func blpop(args []string) ([]byte, error) {
 		return nil, errArgNumber
 	}
 
+	//TODO: is this not a concurrency issue? maybe it should be locked forthe whole operation?
 	storedValue, ok := cm.Get(args[0])
 	if !ok {
 		return formatNullBulkString(), nil
