@@ -42,7 +42,7 @@ func set(args []string) ([]byte, error) {
 		expiresBy = time.Now().UnixMilli() + ms
 	}
 
-	cm.Set(args[0], StoredValue{args[1], nil, false, expiresBy})
+	cm.Set(args[0], StoredValue{args[1], nil, false, expiresBy, nil})
 	return formatSimpleString("OK"), nil
 }
 
@@ -77,7 +77,7 @@ func rpush(args []string) ([]byte, error) {
 
 	storedValue, ok := cm.Get(args[0])
 	if !ok {
-		cm.Set(args[0], StoredValue{"", args[1:], true, -1})
+		cm.Set(args[0], StoredValue{"", args[1:], true, -1, nil})
 		return formatInt(len(args[1:]), false), nil
 	}
 
@@ -85,7 +85,23 @@ func rpush(args []string) ([]byte, error) {
 		return nil, errWrongtypeOperation
 	}
 
-	storedValue.lval = append(storedValue.lval, args[1:]...)
+	if len(storedValue.listeners) == 0 {
+		storedValue.lval = append(storedValue.lval, args[1:]...)
+		cm.Set(args[0], storedValue)
+
+		return formatInt(len(storedValue.lval), false), nil
+	}
+
+	storedValue = handleListeners(storedValue, args[1:], false)
+	// limit := min(len(storedValue.listeners), len(args[1:]))
+
+	// for i := range limit {
+	// 	storedValue.listeners[i] <- args[i+1]
+	// 	close(storedValue.listeners[i])
+	// }
+
+	// storedValue.listeners = storedValue.listeners[limit:]
+	// storedValue.lval = append(storedValue.lval, args[limit+1:]...)
 	cm.Set(args[0], storedValue)
 
 	return formatInt(len(storedValue.lval), false), nil
@@ -100,7 +116,7 @@ func lpush(args []string) ([]byte, error) {
 	if !ok {
 		values := reverseArray(args[1:])
 
-		cm.Set(args[0], StoredValue{"", values, true, -1})
+		cm.Set(args[0], StoredValue{"", values, true, -1, nil})
 		return formatInt(len(values), false), nil
 	}
 
@@ -108,10 +124,48 @@ func lpush(args []string) ([]byte, error) {
 		return nil, errWrongtypeOperation
 	}
 
-	storedValue.lval = append(reverseArray(args[1:]), storedValue.lval...)
+	if len(storedValue.listeners) == 0 {
+		storedValue.lval = append(reverseArray(args[1:]), storedValue.lval...)
+		cm.Set(args[0], storedValue)
+
+		return formatInt(len(storedValue.lval), false), nil
+	}
+
+	valsReversed := reverseArray(args[1:])
+
+	storedValue = handleListeners(storedValue, valsReversed, true)
+
+	// limit := min(len(storedValue.listeners), len(valsReversed))
+
+	// for i := range limit {
+	// 	storedValue.listeners[i] <- valsReversed[i+1]
+	// 	close(storedValue.listeners[i])
+	// }
+
+	// storedValue.listeners = storedValue.listeners[limit:]
+	// storedValue.lval = append(valsReversed[limit+1:], storedValue.lval...)
 	cm.Set(args[0], storedValue)
 
 	return formatInt(len(storedValue.lval), false), nil
+}
+
+func handleListeners(storedValue StoredValue, listValues []string, prepend bool) StoredValue {
+	limit := min(len(storedValue.listeners), len(listValues))
+
+	for i := range limit {
+		storedValue.listeners[i] <- listValues[i]
+		close(storedValue.listeners[i])
+	}
+
+	storedValue.listeners = storedValue.listeners[limit:]
+
+	if prepend {
+		storedValue.lval = append(listValues[limit:], storedValue.lval...)
+	} else {
+		storedValue.lval = append(storedValue.lval, listValues[limit:]...)
+	}
+
+	return storedValue
 }
 
 func lrange(args []string) ([]byte, error) {
@@ -222,9 +276,18 @@ func lpop(args []string) ([]byte, error) {
 }
 
 func blpop(args []string) ([]byte, error) {
-	if len(args) != 1 {
+	//TODO: add multiple list and timeout args
+	if len(args) != 2 {
 		return nil, errArgNumber
 	}
+
+	timeout, err := strconv.Atoi(args[1])
+	if err != nil {
+		return nil, errors.New("timeout couldn't be parsed")
+	}
+
+	//TODO: implement handling for timeout
+	fmt.Println("timout received: ", timeout)
 
 	//TODO: is this not a concurrency issue? maybe it should be locked forthe whole operation?
 	storedValue, ok := cm.Get(args[0])
@@ -244,21 +307,17 @@ func blpop(args []string) ([]byte, error) {
 		return formatBulkString(result), nil
 	}
 
-	//TODO: if the list in stored value is empty
-	// -> listen for incoming value
+	c := make(chan string, 1)
 
-	//this probably has to be it's own goroutine and we need to be able to subscribe to a channel
-	//every time an item is added to any list (successful r/lpush) and 'event' needs to be sent
-	//if there are any listeners -> they receive the 'event' and act on it
+	storedValue.AddChannel(c)
 
-	//TODO: this should happend in the push methods to all subscribers that are found in the db
-	// // Or with a fan-out loop:
-	// subscribers := []chan string{sub1, sub2}
-	// for _, ch := range subscribers {
-	// 	ch <- msg
-	// }
+	cm.Set(args[0], storedValue)
 
-	//TODO: here need to chreate channel, keep reference to it, save it to db and wait on it
-	//not sure if ref/value issues
-	return formatNullBulkString(), nil
+	//listen for incoming value
+	val, ok := <-c
+	if !ok {
+		return nil, errors.New("error receiving value from list")
+	}
+
+	return formatBulkString(val), nil
 }
