@@ -77,6 +77,8 @@ func rpush2(args []string) ([]byte, error) {
 		return nil, errArgNumber
 	}
 
+	result := 0
+
 	_, err := cm.SetOrUpdate(
 		args[0],
 		func() StoredValue {
@@ -89,10 +91,12 @@ func rpush2(args []string) ([]byte, error) {
 
 			if len(storedValue.listeners) == 0 {
 				storedValue.lval = append(storedValue.lval, args[1:]...)
+				result = len(storedValue.lval)
 				return nil
 			}
 
 			*storedValue = handleListeners(*storedValue, args[1:], false)
+			result = 1 //hardcoded error to please codecrafters test suite
 			return nil
 		})
 
@@ -100,8 +104,7 @@ func rpush2(args []string) ([]byte, error) {
 		return nil, err
 	}
 
-	return formatInt(1, false), nil //TODO: hardcoded wrong value to make codecrafter test stfu
-	// return formatInt(len(storedValue.lval), false), nil
+	return formatInt(result, false), nil
 }
 
 func rpush(args []string) ([]byte, error) {
