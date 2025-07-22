@@ -301,7 +301,7 @@ func blpop(args []string) ([]byte, error) {
 
 	var timeoutChannel <-chan time.Time
 	if timeout > 0 {
-		timeoutChannel = time.After(time.Duration(timeout) * time.Second)
+		timeoutChannel = time.After(time.Duration(timeout * float64(time.Second)))
 	}
 
 	select {

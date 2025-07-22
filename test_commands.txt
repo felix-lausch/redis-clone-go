@@ -12,6 +12,7 @@ printf '*2\r\n$4\r\nLPOP\r\n$4\r\nlist\r\n' | nc localhost 6379
 printf '*3\r\n$4\r\nLPOP\r\n$4\r\nlist\r\n$1\r\n1\r\n' | nc localhost 6379
 
 printf '*3\r\n$5\r\nBLPOP\r\n$4\r\nlist\r\n$1\r\n0\r\n' | nc localhost 6379
+printf '*3\r\n$5\r\nBLPOP\r\n$4\r\npear\r\n$3\r\n0.4\r\n' | nc localhost 6379
 
 printf '*4\r\n$5\r\nRPUSH\r\n$4\r\nlist\r\n$5\r\nberry\r\n$3\r\nlol\r\n' | nc localhost 6379
 printf '*3\r\n$5\r\nRPUSH\r\n$4\r\nlist\r\n$5\r\nberry\r\n' | nc localhost 6379
