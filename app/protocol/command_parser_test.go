@@ -1,4 +1,4 @@
-package main
+package protocol
 
 import (
 	"bufio"
@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestParseResp(t *testing.T) {
+func TestParseCommand(t *testing.T) {
 	tests := []struct {
 		name        string
 		input       string
@@ -54,10 +54,10 @@ func TestParseResp(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reader := bufio.NewReader(strings.NewReader(tt.input))
-			cmd, err := parseResp(reader)
+			cmd, err := ParseCommand(reader)
 
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("parseResp() error = %v, wantErr %v", err, tt.wantErr)
+				t.Fatalf("parseCommand() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
 			if err != nil {

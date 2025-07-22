@@ -1,4 +1,4 @@
-package main
+package protocol
 
 import (
 	"bufio"
@@ -14,7 +14,7 @@ type Command struct {
 	Args []string
 }
 
-func parseResp(reader *bufio.Reader) (*Command, error) {
+func ParseCommand(reader *bufio.Reader) (*Command, error) {
 	const arrayIndicator byte = '*'
 
 	arrLen, err := parseTypeInfo(reader, arrayIndicator)

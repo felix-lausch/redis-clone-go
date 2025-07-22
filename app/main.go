@@ -7,11 +7,9 @@ import (
 	"io"
 	"net"
 	"os"
+	"redis-clone-go/app/commands"
+	"redis-clone-go/app/protocol"
 )
-
-var cm = &ConcurrentMap[StoredValue]{
-	db: make(map[string]StoredValue),
-}
 
 func main() {
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
@@ -41,7 +39,7 @@ func handleConnection(conn net.Conn) {
 	reader := bufio.NewReader(conn)
 
 	for {
-		command, err := parseResp(reader)
+		command, err := protocol.ParseCommand(reader)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				fmt.Println("client disconnected")
@@ -54,35 +52,35 @@ func handleConnection(conn net.Conn) {
 
 		response, err := handleCommand(command)
 		if err != nil {
-			conn.Write(formatError(err))
+			conn.Write(protocol.FormatError(err))
 		}
 
 		conn.Write(response)
 	}
 }
 
-func handleCommand(command *Command) ([]byte, error) {
+func handleCommand(command *protocol.Command) ([]byte, error) {
 	switch command.Name {
 	case "PING":
-		return ping()
+		return commands.Ping()
 	case "ECHO":
-		return echo(command.Args)
+		return commands.Echo(command.Args)
 	case "SET":
-		return set(command.Args)
+		return commands.Set(command.Args)
 	case "GET":
-		return get(command.Args)
+		return commands.Get(command.Args)
 	case "RPUSH":
-		return rpush(command.Args)
+		return commands.Rpush(command.Args)
 	case "LRANGE":
-		return lrange(command.Args)
+		return commands.Lrange(command.Args)
 	case "LPUSH":
-		return lpush(command.Args)
+		return commands.Lpush(command.Args)
 	case "LLEN":
-		return llen(command.Args)
+		return commands.Llen(command.Args)
 	case "LPOP":
-		return lpop(command.Args)
+		return commands.Lpop(command.Args)
 	case "BLPOP":
-		return blpop(command.Args)
+		return commands.Blpop(command.Args)
 	default:
 		return nil, fmt.Errorf("unkown command '%v'", command.Name)
 	}

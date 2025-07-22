@@ -1,4 +1,4 @@
-package main
+package store
 
 import (
 	"errors"
@@ -6,7 +6,11 @@ import (
 	"sync"
 )
 
-var errKeyNotFound = errors.New("key not found")
+var ErrKeyNotFound = errors.New("key not found")
+
+var CM = &ConcurrentMap[StoredValue]{
+	db: make(map[string]StoredValue),
+}
 
 type ConcurrentMap[T any] struct {
 	mu sync.RWMutex
@@ -53,7 +57,7 @@ func (cm *ConcurrentMap[T]) Update(key string, update func(val *T) error) (T, er
 
 	val, ok := cm.db[key]
 	if !ok {
-		return val, fmt.Errorf("key %q: %w", key, errKeyNotFound)
+		return val, fmt.Errorf("key %q: %w", key, ErrKeyNotFound)
 	}
 
 	if err := update(&val); err != nil {
