@@ -81,6 +81,8 @@ func handleCommand(command *protocol.Command) ([]byte, error) {
 		return commands.Lpop(command.Args)
 	case "BLPOP":
 		return commands.Blpop(command.Args)
+	case "TYPE":
+		return commands.Type(command.Args)
 	default:
 		return nil, fmt.Errorf("unkown command '%v'", command.Name)
 	}

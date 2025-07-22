@@ -57,3 +57,25 @@ func Get(args []string) ([]byte, error) {
 
 	return protocol.FormatBulkString(storedValue.Val), nil
 }
+
+func Type(args []string) ([]byte, error) {
+	if len(args) != 1 {
+		return nil, errArgNumber
+	}
+
+	storedValue, ok := store.CM.Get(args[0])
+	if !ok {
+		return protocol.FormatSimpleString("none"), nil
+	}
+
+	if storedValue.IsExpired() {
+		store.CM.Delete(args[0])
+		return protocol.FormatSimpleString("none"), nil
+	}
+
+	if storedValue.IsList {
+		return protocol.FormatSimpleString("list"), nil
+	}
+
+	return protocol.FormatSimpleString("string"), nil
+}

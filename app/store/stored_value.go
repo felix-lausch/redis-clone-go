@@ -1,5 +1,7 @@
 package store
 
+import "time"
+
 type StoredValue struct {
 	Val       string
 	Lval      []string
@@ -14,6 +16,10 @@ func (sv *StoredValue) AddChannel(c chan string) {
 	} else {
 		sv.Listeners = append(sv.Listeners, c)
 	}
+}
+
+func (sv *StoredValue) IsExpired() bool {
+	return sv.ExpiresBy != -1 && time.Now().UnixMilli() > sv.ExpiresBy
 }
 
 func NewStringValue(val string, expiresBy int64) StoredValue {
