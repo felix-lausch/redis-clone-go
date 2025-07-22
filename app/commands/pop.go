@@ -31,7 +31,7 @@ func Lpop(args []string) ([]byte, error) {
 	_, err := store.CM.Update(
 		args[0],
 		func(storedValue *store.StoredValue) error {
-			if !storedValue.IsList {
+			if storedValue.Type != store.TypeList {
 				return errWrongtypeOperation
 			}
 
@@ -79,7 +79,7 @@ func Blpop(args []string) ([]byte, error) {
 			return store.NewListListener(c)
 		},
 		func(storedValue *store.StoredValue) error {
-			if !storedValue.IsList {
+			if storedValue.Type != store.TypeList {
 				return errWrongtypeOperation
 			}
 
@@ -129,7 +129,7 @@ func removeChannel(key string, c chan string) error {
 	_, err := store.CM.Update(
 		key,
 		func(storedValue *store.StoredValue) error {
-			if !storedValue.IsList {
+			if storedValue.Type != store.TypeList {
 				return errWrongtypeOperation
 			}
 

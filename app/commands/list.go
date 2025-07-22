@@ -19,7 +19,7 @@ func Rpush(args []string) ([]byte, error) {
 			return store.NewListValue(args[1:])
 		},
 		func(storedValue *store.StoredValue) error {
-			if !storedValue.IsList {
+			if storedValue.Type != store.TypeList {
 				return errWrongtypeOperation
 			}
 
@@ -56,7 +56,7 @@ func Lpush(args []string) ([]byte, error) {
 			return store.NewListValue(values)
 		},
 		func(storedValue *store.StoredValue) error {
-			if !storedValue.IsList {
+			if storedValue.Type != store.TypeList {
 				return errWrongtypeOperation
 			}
 
@@ -114,7 +114,7 @@ func Lrange(args []string) ([]byte, error) {
 		return protocol.FormatBulkStringArray([]string{}), nil
 	}
 
-	if !storedValue.IsList {
+	if storedValue.Type != store.TypeList {
 		return nil, errWrongtypeOperation
 	}
 
@@ -154,7 +154,7 @@ func Llen(args []string) ([]byte, error) {
 		return protocol.FormatInt(0, false), nil
 	}
 
-	if !storedValue.IsList {
+	if storedValue.Type != store.TypeList {
 		return nil, errWrongtypeOperation
 	}
 

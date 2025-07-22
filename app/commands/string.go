@@ -44,7 +44,7 @@ func Get(args []string) ([]byte, error) {
 		return protocol.FormatNullBulkString(), nil
 	}
 
-	if storedValue.IsList {
+	if storedValue.Type != store.TypeString {
 		return nil, errWrongtypeOperation
 	}
 
@@ -73,9 +73,14 @@ func Type(args []string) ([]byte, error) {
 		return protocol.FormatSimpleString("none"), nil
 	}
 
-	if storedValue.IsList {
+	switch storedValue.Type {
+	case store.TypeList:
 		return protocol.FormatSimpleString("list"), nil
+	case store.TypeStream:
+		return protocol.FormatSimpleString("stream"), nil
+	case store.TypeString:
+		return protocol.FormatSimpleString("string"), nil
+	default:
+		return protocol.FormatSimpleString("none"), nil
 	}
-
-	return protocol.FormatSimpleString("string"), nil
 }

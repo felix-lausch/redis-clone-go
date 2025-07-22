@@ -2,10 +2,19 @@ package store
 
 import "time"
 
+type StoredValueType int
+
+const (
+	TypeString StoredValueType = iota
+	TypeList
+	TypeStream
+)
+
 type StoredValue struct {
 	Val       string
 	Lval      []string
-	IsList    bool
+	Xval      map[string]string
+	Type      StoredValueType
 	ExpiresBy int64
 	Listeners []chan string
 }
@@ -23,13 +32,17 @@ func (sv *StoredValue) IsExpired() bool {
 }
 
 func NewStringValue(val string, expiresBy int64) StoredValue {
-	return StoredValue{val, nil, false, expiresBy, nil}
+	return StoredValue{val, nil, nil, TypeString, expiresBy, nil}
 }
 
 func NewListValue(lval []string) StoredValue {
-	return StoredValue{"", lval, true, -1, nil}
+	return StoredValue{"", lval, nil, TypeList, -1, nil}
 }
 
 func NewListListener(c chan string) StoredValue {
-	return StoredValue{"", []string{}, true, -1, []chan string{c}}
+	return StoredValue{"", []string{}, nil, TypeList, -1, []chan string{c}}
+}
+
+func NewStreamValue(xval map[string]string) StoredValue {
+	return StoredValue{"", nil, xval, TypeStream, -1, nil}
 }
