@@ -499,7 +499,7 @@ func blpop2(args []string) ([]byte, error) {
 		return formatBulkStringArray([]string{args[0], result}), nil
 
 	case <-timeoutChannel:
-		err = removeChannel(args[0], c)
+		err = removeChannel2(args[0], c)
 		if err != nil {
 			return nil, fmt.Errorf("error removing channel: %w", err)
 		}
@@ -526,5 +526,32 @@ func removeChannel(key string, c chan string) error {
 	})
 
 	cm.Set(key, storedValue)
+	return nil
+}
+
+func removeChannel2(key string, c chan string) error {
+	_, err := cm.Update(
+		key,
+		func(storedValue *StoredValue) error {
+			if !storedValue.isList {
+				return errWrongtypeOperation
+			}
+
+			storedValue.listeners = slices.DeleteFunc(storedValue.listeners, func(channel chan string) bool {
+				return channel == c
+			})
+
+			return nil
+		},
+	)
+
+	if err != nil {
+		if errors.Is(err, errKeyNotFound) {
+			return errors.New("error getting list for key")
+		}
+
+		return err
+	}
+
 	return nil
 }
