@@ -459,7 +459,7 @@ func blpop2(args []string) ([]byte, error) {
 	_, err = cm.SetOrUpdate(
 		args[0],
 		func() StoredValue {
-			return StoredValue{"", []string{}, true, -1, nil}
+			return StoredValue{"", []string{}, true, -1, []chan string{c}}
 		},
 		func(storedValue *StoredValue) error {
 			if !storedValue.isList {
