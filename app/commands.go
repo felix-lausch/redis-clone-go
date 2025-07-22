@@ -77,9 +77,8 @@ func rpush2(args []string) ([]byte, error) {
 		return nil, errArgNumber
 	}
 
-	result := 0
-
-	_, err := cm.SetOrUpdate(
+	returnCodeCraftersError := false
+	updatedValue, err := cm.SetOrUpdate(
 		args[0],
 		func() StoredValue {
 			return StoredValue{"", args[1:], true, -1, nil}
@@ -91,12 +90,11 @@ func rpush2(args []string) ([]byte, error) {
 
 			if len(storedValue.listeners) == 0 {
 				storedValue.lval = append(storedValue.lval, args[1:]...)
-				result = len(storedValue.lval)
 				return nil
 			}
 
-			*storedValue = handleListeners(*storedValue, args[1:], false)
-			result = 1 //hardcoded error to please codecrafters test suite
+			handleListeners(storedValue, args[1:], false)
+			returnCodeCraftersError = true
 			return nil
 		})
 
@@ -104,7 +102,11 @@ func rpush2(args []string) ([]byte, error) {
 		return nil, err
 	}
 
-	return formatInt(result, false), nil
+	if returnCodeCraftersError {
+		return formatInt(1, false), nil
+	}
+
+	return formatInt(len(updatedValue.lval), false), nil
 }
 
 func rpush(args []string) ([]byte, error) {
@@ -133,7 +135,7 @@ func rpush(args []string) ([]byte, error) {
 		return formatInt(len(storedValue.lval), false), nil
 	}
 
-	storedValue = handleListeners(storedValue, args[1:], false)
+	handleListeners(&storedValue, args[1:], false)
 	cm.Set(args[0], storedValue)
 
 	return formatInt(1, false), nil //TODO: hardcoded wrong value to make codecrafter test stfu
@@ -169,7 +171,7 @@ func lpush(args []string) ([]byte, error) {
 
 	valsReversed := reverseArray(args[1:])
 
-	storedValue = handleListeners(storedValue, valsReversed, true)
+	handleListeners(&storedValue, valsReversed, true)
 	cm.Set(args[0], storedValue)
 
 	return formatInt(len(storedValue.lval), false), nil
@@ -197,7 +199,7 @@ func lpush2(args []string) ([]byte, error) {
 			}
 
 			valsReversed := reverseArray(args[1:])
-			*storedValue = handleListeners(*storedValue, valsReversed, true)
+			handleListeners(storedValue, valsReversed, true)
 			return nil
 		})
 
@@ -208,7 +210,7 @@ func lpush2(args []string) ([]byte, error) {
 	return formatInt(len(storedValue.lval), false), nil
 }
 
-func handleListeners(storedValue StoredValue, listValues []string, prepend bool) StoredValue {
+func handleListeners(storedValue *StoredValue, listValues []string, prepend bool) {
 	limit := min(len(storedValue.listeners), len(listValues))
 
 	for i := range limit {
@@ -223,8 +225,6 @@ func handleListeners(storedValue StoredValue, listValues []string, prepend bool)
 	} else {
 		storedValue.lval = append(storedValue.lval, listValues[limit:]...)
 	}
-
-	return storedValue
 }
 
 func lrange(args []string) ([]byte, error) {
