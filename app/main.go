@@ -72,17 +72,17 @@ func handleCommand(command *Command) ([]byte, error) {
 	case "GET":
 		return get(command.Args)
 	case "RPUSH":
-		return rpush2(command.Args)
+		return rpush(command.Args)
 	case "LRANGE":
 		return lrange(command.Args)
 	case "LPUSH":
-		return lpush2(command.Args)
+		return lpush(command.Args)
 	case "LLEN":
 		return llen(command.Args)
 	case "LPOP":
-		return lpop2(command.Args)
+		return lpop(command.Args)
 	case "BLPOP":
-		return blpop2(command.Args)
+		return blpop(command.Args)
 	default:
 		return nil, fmt.Errorf("unkown command '%v'", command.Name)
 	}
