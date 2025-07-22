@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -76,16 +77,16 @@ func rpush(args []string) ([]byte, error) {
 	}
 
 	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
 	storedValue, ok := cm.Get(args[0])
 	if !ok {
 		cm.Set(args[0], StoredValue{"", args[1:], true, -1, nil})
 
-		cm.mu.Unlock()
 		return formatInt(len(args[1:]), false), nil
 	}
 
 	if !storedValue.isList {
-		cm.mu.Unlock()
 		return nil, errWrongtypeOperation
 	}
 
@@ -93,14 +94,12 @@ func rpush(args []string) ([]byte, error) {
 		storedValue.lval = append(storedValue.lval, args[1:]...)
 		cm.Set(args[0], storedValue)
 
-		cm.mu.Unlock()
 		return formatInt(len(storedValue.lval), false), nil
 	}
 
 	storedValue = handleListeners(storedValue, args[1:], false)
 	cm.Set(args[0], storedValue)
 
-	cm.mu.Unlock()
 	return formatInt(1, false), nil //TODO: hardcoded wrong value to make codecrafter test stfu
 	// return formatInt(len(storedValue.lval), false), nil
 }
@@ -269,15 +268,11 @@ func blpop(args []string) ([]byte, error) {
 		return nil, errArgNumber
 	}
 
-	timeout, err := strconv.Atoi(args[1])
-	if err != nil {
+	timeout, err := strconv.ParseFloat(args[1], 64)
+	if err != nil || timeout < 0 {
 		return nil, errors.New("timeout couldn't be parsed")
 	}
 
-	//TODO: implement handling for timeout
-	fmt.Println("timout received: ", timeout)
-
-	//TODO: is this not a concurrency issue? maybe it should be locked forthe whole operation?
 	cm.mu.Lock()
 	storedValue, ok := cm.Get(args[0])
 	if !ok {
@@ -304,11 +299,46 @@ func blpop(args []string) ([]byte, error) {
 	cm.Set(args[0], storedValue)
 	cm.mu.Unlock()
 
-	//await incoming value
-	result, ok := <-c
-	if !ok {
-		return nil, errors.New("error receiving value from list")
+	var timeoutChannel <-chan time.Time
+	if timeout > 0 {
+		timeoutChannel = time.After(time.Duration(timeout) * time.Second)
 	}
 
-	return formatBulkStringArray([]string{args[0], result}), nil
+	select {
+	case result, ok := <-c:
+		if !ok {
+			return nil, errors.New("error receiving value from list")
+		}
+
+		return formatBulkStringArray([]string{args[0], result}), nil
+
+	case <-timeoutChannel:
+		err = removeChannel(args[0], c)
+		if err != nil {
+			return nil, fmt.Errorf("error removing channel: %w", err)
+		}
+
+		return formatNullBulkString(), nil
+	}
+}
+
+func removeChannel(key string, c chan string) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	storedValue, ok := cm.Get(key)
+	if !ok {
+		return errors.New("error getting list for key")
+	}
+
+	if !storedValue.isList {
+		return errWrongtypeOperation
+	}
+
+	storedValue.listeners = slices.DeleteFunc(storedValue.listeners, func(channel chan string) bool {
+		return channel == c
+	})
+
+	cm.Set(key, storedValue)
+	return nil
 }
