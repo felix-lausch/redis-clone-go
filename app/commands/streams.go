@@ -79,7 +79,7 @@ func XRange(args []string) ([]byte, error) {
 	}
 
 	startIdx, _ := FindIndex(start, storedValue.Xval)
-	endIdx, _ := FindIndex(end, storedValue.Xval[startIdx:])
+	endIdx, _ := FindIndex(end, storedValue.Xval)
 
 	result := storedValue.Xval[startIdx : endIdx+1]
 
