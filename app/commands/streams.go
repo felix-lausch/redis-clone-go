@@ -3,6 +3,7 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"math"
 	"redis-clone-go/app/protocol"
 	"redis-clone-go/app/store"
 )
@@ -59,12 +60,12 @@ func XRange(args []string) ([]byte, error) {
 		return nil, errArgNumber
 	}
 
-	start, err := ParseXRangeStreamId(args[1])
+	start, err := ParseXRangeStartId(args[1])
 	if err != nil {
 		return nil, fmt.Errorf("error parsing start: %w", err)
 	}
 
-	end, err := ParseXRangeStreamId(args[2])
+	end, err := ParseXRangeEndId(args[2])
 	if err != nil {
 		return nil, fmt.Errorf("error parsing end: %w", err)
 	}
@@ -86,10 +87,19 @@ func XRange(args []string) ([]byte, error) {
 	return FormatStreamEntries(result), nil
 }
 
-func ParseXRangeStreamId(id string) (store.StreamId, error) {
+func ParseXRangeStartId(id string) (store.StreamId, error) {
 	if id == "-" {
 		//minimum id
 		return store.StreamId{Ms: 0, Sequence: 1}, nil
+	}
+
+	return store.ParseStreamId(id)
+}
+
+func ParseXRangeEndId(id string) (store.StreamId, error) {
+	if id == "+" {
+		//maximum id
+		return store.StreamId{Ms: math.MaxInt64, Sequence: math.MaxInt64}, nil
 	}
 
 	return store.ParseStreamId(id)
