@@ -12,7 +12,6 @@ func XAdd(args []string) ([]byte, error) {
 		return nil, errArgNumber
 	}
 
-	//TODO: check if args[0] contains asterisk, if so -> call generate method
 	streamId, err := store.ParseStreamId(args[1])
 	if err != nil {
 		return nil, fmt.Errorf("error parsing stream id: %w", err)
@@ -35,11 +34,12 @@ func XAdd(args []string) ([]byte, error) {
 
 			streamId.GenerateValues(storedValue.Xval)
 
-			if !CanAppendKey(storedValue.Xval, &streamId) {
+			if !streamId.CanAppendKey(storedValue.Xval) {
 				return errStreamIdTooSmall
 			}
 
 			storedValue.Xval = append(storedValue.Xval, streamId)
+
 			//TODO: store key value pairs to stream
 
 			return nil
@@ -51,26 +51,4 @@ func XAdd(args []string) ([]byte, error) {
 	}
 
 	return protocol.FormatBulkString(streamId.String()), nil
-}
-
-// TODO: should this be a method of streamid?
-
-// parse -> (newId.generate(latest)) -> insert
-
-func CanAppendKey(streamIds []store.StreamId, newId *store.StreamId) bool {
-	if len(streamIds) == 0 {
-		return true
-	}
-
-	latest := streamIds[len(streamIds)-1]
-
-	if newId.Ms < latest.Ms {
-		return false
-	}
-
-	if newId.Ms == latest.Ms && newId.Sequence <= latest.Sequence {
-		return false
-	}
-
-	return true
 }

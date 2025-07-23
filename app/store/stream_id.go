@@ -52,6 +52,24 @@ func (id *StreamId) GenerateValues(previousIds []StreamId) {
 	id.generateSequence = false
 }
 
+func (id *StreamId) CanAppendKey(previousIds []StreamId) bool {
+	if len(previousIds) == 0 {
+		return true
+	}
+
+	latest := previousIds[len(previousIds)-1]
+
+	if id.Ms < latest.Ms {
+		return false
+	}
+
+	if id.Ms == latest.Ms && id.Sequence <= latest.Sequence {
+		return false
+	}
+
+	return true
+}
+
 func ParseStreamId(id string) (StreamId, error) {
 	const idSeparator string = "-"
 	const asterisk string = "*"
