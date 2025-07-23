@@ -59,16 +59,14 @@ func XRange(args []string) ([]byte, error) {
 		return nil, errArgNumber
 	}
 
-	start, err := store.ParseStreamId(args[1])
+	start, err := ParseXRangeStreamId(args[1])
 	if err != nil {
 		return nil, fmt.Errorf("error parsing start: %w", err)
-		// return nil, errors.New("Invalid stream ID specified as stream command argument")
 	}
 
-	end, err := store.ParseStreamId(args[2])
+	end, err := ParseXRangeStreamId(args[2])
 	if err != nil {
 		return nil, fmt.Errorf("error parsing end: %w", err)
-		// return nil, errors.New("Invalid stream ID specified as stream command argument")
 	}
 
 	storedValue, ok := store.CM.Get(args[0])
@@ -80,13 +78,34 @@ func XRange(args []string) ([]byte, error) {
 		return nil, errWrongtypeOperation
 	}
 
-	//read the correct range from xval
 	startIdx, _ := FindIndex(start, storedValue.Xval)
-	endIdx, _ := FindIndex(end, storedValue.Xval)
+	endIdx, _ := FindIndex(end, storedValue.Xval[startIdx:])
 
 	result := storedValue.Xval[startIdx : endIdx+1]
 
 	return FormatStreamEntries(result), nil
+}
+
+func ParseXRangeStreamId(id string) (store.StreamId, error) {
+	if id == "-" {
+		//minimum id
+		return store.StreamId{Ms: 0, Sequence: 1}, nil
+	}
+
+	return store.ParseStreamId(id)
+}
+
+func FindIndex(id store.StreamId, entries []store.StreamEntry) (int, bool) {
+	for i, val := range entries {
+		//TODO: this is too simple, it doesnt handle * yet
+
+		if id.Ms == val.Id.Ms && id.Sequence == val.Id.Sequence {
+			return i, true
+		}
+	}
+
+	//TODO: how to handle not finding anything?
+	return -1, false
 }
 
 func FormatStreamEntries(entries []store.StreamEntry) []byte {
@@ -106,17 +125,4 @@ func FormatStreamEntry(entry store.StreamEntry) []byte {
 	array = append(array, protocol.FormatBulkStringArray(entry.Pairs)...)
 
 	return array
-}
-
-func FindIndex(id store.StreamId, entries []store.StreamEntry) (int, bool) {
-	for i, val := range entries {
-		//TODO: this is too simple, it doesnt handle * yet
-
-		if id.Ms == val.Id.Ms && id.Sequence == val.Id.Sequence {
-			return i, true
-		}
-	}
-
-	//TODO: how to handle not finding anything?
-	return -1, false
 }
