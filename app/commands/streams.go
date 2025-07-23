@@ -25,7 +25,9 @@ func XAdd(args []string) ([]byte, error) {
 		args[0],
 		func() store.StoredValue {
 			streamId.GenerateValues(nil)
-			return store.NewStreamValue([]store.StreamId{streamId})
+			entry := store.EmptyStreamEntry(streamId)
+
+			return store.NewStreamValue([]store.StreamEntry{entry})
 		},
 		func(storedValue *store.StoredValue) error {
 			if storedValue.Type != store.TypeStream {
@@ -38,9 +40,8 @@ func XAdd(args []string) ([]byte, error) {
 				return errStreamIdTooSmall
 			}
 
-			storedValue.Xval = append(storedValue.Xval, streamId)
-
-			//TODO: store key value pairs to stream
+			streamEntry := store.NewStreamEntry(streamId, args[2:])
+			storedValue.Xval = append(storedValue.Xval, streamEntry)
 
 			return nil
 		},
@@ -51,4 +52,64 @@ func XAdd(args []string) ([]byte, error) {
 	}
 
 	return protocol.FormatBulkString(streamId.String()), nil
+}
+
+func XRange(args []string) ([]byte, error) {
+	if len(args) != 3 {
+		return nil, errArgNumber
+	}
+
+	start, err := store.ParseStreamId(args[1])
+	if err != nil {
+		return nil, fmt.Errorf("error parsing start: %w", err)
+		// return nil, errors.New("Invalid stream ID specified as stream command argument")
+	}
+
+	end, err := store.ParseStreamId(args[2])
+	if err != nil {
+		return nil, fmt.Errorf("error parsing end: %w", err)
+		// return nil, errors.New("Invalid stream ID specified as stream command argument")
+	}
+
+	storedValue, ok := store.CM.Get(args[0])
+	if !ok {
+		return protocol.FormatBulkStringArray([]string{}), nil
+	}
+
+	if storedValue.Type != store.TypeStream {
+		return nil, errWrongtypeOperation
+	}
+
+	//read the correct range from xval
+	startIdx, _ := FindIndex(start, storedValue.Xval)
+	endIdx, _ := FindIndex(end, storedValue.Xval)
+
+	result := storedValue.Xval[startIdx : endIdx+1]
+
+	//format response
+
+	resultStrings := []string{}
+
+	//TODO: improve this to not have so much byte<->string back and forth
+	for _, val := range result {
+		pairs := protocol.FormatBulkStringArray(val.Pairs)
+		entry := protocol.FormatBulkStringArray([]string{val.Id.String(), string(pairs)})
+
+		resultStrings = append(resultStrings, string(entry))
+	}
+
+	return protocol.FormatBulkStringArray(resultStrings), nil
+}
+
+func FindIndex(id store.StreamId, entries []store.StreamEntry) (int, bool) {
+	for i, val := range entries {
+		//TODO: this is too simple, it doesnt handle * yet
+
+		if id.Ms == val.Id.Ms && id.Sequence == val.Id.Sequence {
+			return i, true
+		}
+	}
+
+	//TODO: how to handle not finding anything?
+	return -1, false
 }

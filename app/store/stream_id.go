@@ -19,11 +19,11 @@ func (id StreamId) String() string {
 	return fmt.Sprintf("%v-%v", id.Ms, id.Sequence)
 }
 
-func (id *StreamId) GenerateValues(previousIds []StreamId) {
+func (id *StreamId) GenerateValues(previousIds []StreamEntry) {
 	var latestId *StreamId
 
 	if len(previousIds) > 0 {
-		latestId = &previousIds[len(previousIds)-1]
+		latestId = &previousIds[len(previousIds)-1].Id
 	}
 
 	if id.generateMs {
@@ -52,12 +52,12 @@ func (id *StreamId) GenerateValues(previousIds []StreamId) {
 	id.generateSequence = false
 }
 
-func (id *StreamId) CanAppendKey(previousIds []StreamId) bool {
+func (id *StreamId) CanAppendKey(previousIds []StreamEntry) bool {
 	if len(previousIds) == 0 {
 		return true
 	}
 
-	latest := previousIds[len(previousIds)-1]
+	latest := previousIds[len(previousIds)-1].Id
 
 	if id.Ms < latest.Ms {
 		return false

@@ -85,6 +85,8 @@ func handleCommand(command *protocol.Command) ([]byte, error) {
 		return commands.Type(command.Args)
 	case "XADD":
 		return commands.XAdd(command.Args)
+	case "XRANGE":
+		return commands.XRange(command.Args)
 	default:
 		return nil, fmt.Errorf("unkown command '%v'", command.Name)
 	}

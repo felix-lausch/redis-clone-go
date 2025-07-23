@@ -13,7 +13,7 @@ const (
 type StoredValue struct {
 	Val       string
 	Lval      []string
-	Xval      []StreamId
+	Xval      []StreamEntry
 	Type      StoredValueType
 	ExpiresBy int64
 	Listeners []chan string
@@ -43,6 +43,6 @@ func NewListListener(c chan string) StoredValue {
 	return StoredValue{"", []string{}, nil, TypeList, -1, []chan string{c}}
 }
 
-func NewStreamValue(xval []StreamId) StoredValue {
+func NewStreamValue(xval []StreamEntry) StoredValue {
 	return StoredValue{"", nil, xval, TypeStream, -1, nil}
 }
