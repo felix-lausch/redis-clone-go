@@ -79,8 +79,8 @@ func XRange(args []string) ([]byte, error) {
 		return nil, errWrongtypeOperation
 	}
 
-	startIdx, _ := FindIndex(start, storedValue.Xval)
-	endIdx, _ := FindIndex(end, storedValue.Xval)
+	startIdx, _ := FindIndex(start, storedValue.Xval, true)
+	endIdx, _ := FindIndex(end, storedValue.Xval, false)
 
 	result := storedValue.Xval[startIdx : endIdx+1]
 
@@ -105,7 +105,7 @@ func ParseXRangeEndId(id string) (store.StreamId, error) {
 	return store.ParseStreamId(id)
 }
 
-func FindIndex(id store.StreamId, entries []store.StreamEntry) (int, bool) {
+func FindIndex(id store.StreamId, entries []store.StreamEntry, start bool) (int, bool) {
 	for i, val := range entries {
 		//TODO: this is too simple, it doesnt handle * yet
 
@@ -114,8 +114,11 @@ func FindIndex(id store.StreamId, entries []store.StreamEntry) (int, bool) {
 		}
 	}
 
-	//TODO: how to handle not finding anything?
-	return -1, false
+	if start {
+		return 0, true
+	}
+
+	return len(entries) - 1, true
 }
 
 func FormatStreamEntries(entries []store.StreamEntry) []byte {
