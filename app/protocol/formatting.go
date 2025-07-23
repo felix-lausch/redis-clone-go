@@ -33,5 +33,5 @@ func FormatBulkStringArray(elements []string) []byte {
 }
 
 func FormatError(err error) []byte {
-	return fmt.Appendf(nil, "-ERROR %v\r\n", err)
+	return fmt.Appendf(nil, "-%v\r\n", err)
 }
