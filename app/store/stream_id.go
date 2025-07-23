@@ -5,23 +5,60 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type StreamId struct {
 	Ms               int64
-	GenerateMs       bool
+	generateMs       bool
 	Sequence         int64
-	GenerateSequence bool
+	generateSequence bool
 }
 
 func (id StreamId) String() string {
 	return fmt.Sprintf("%v-%v", id.Ms, id.Sequence)
 }
 
+func (id *StreamId) GenerateValues(previousIds []StreamId) {
+	var latestId *StreamId
+
+	if len(previousIds) > 0 {
+		latestId = &previousIds[len(previousIds)-1]
+	}
+
+	if id.generateMs {
+		id.Ms = time.Now().UnixMilli()
+		id.generateMs = false
+	}
+
+	if !id.generateSequence {
+		return
+	}
+
+	latestMs := int64(0)
+	latestSequence := int64(0)
+
+	if latestId != nil {
+		latestMs = latestId.Ms
+		latestSequence = latestId.Sequence
+	}
+
+	if id.Ms == latestMs {
+		id.Sequence = latestSequence + 1
+	} else {
+		id.Sequence = 0
+	}
+
+	id.generateSequence = false
+}
+
 func ParseStreamId(id string) (StreamId, error) {
 	const idSeparator string = "-"
+	const asterisk string = "*"
 
-	//TODO: handle cases including '*'
+	if id == asterisk {
+		return StreamId{-1, true, -1, true}, nil
+	}
 
 	splitId := strings.Split(id, idSeparator)
 	if len(splitId) != 2 {
@@ -33,7 +70,7 @@ func ParseStreamId(id string) (StreamId, error) {
 		return StreamId{}, fmt.Errorf("error parsing millisecond part: %w", err)
 	}
 
-	if splitId[1] == "*" {
+	if splitId[1] == asterisk {
 		return StreamId{msPart, false, -1, true}, nil
 	}
 

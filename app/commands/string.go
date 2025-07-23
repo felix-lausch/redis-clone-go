@@ -48,7 +48,7 @@ func Get(args []string) ([]byte, error) {
 		return nil, errWrongtypeOperation
 	}
 
-	if storedValue.ExpiresBy != -1 && time.Now().UnixMilli() > storedValue.ExpiresBy {
+	if storedValue.IsExpired() {
 		fmt.Println("tried to access expired value")
 		store.CM.Delete(args[0])
 

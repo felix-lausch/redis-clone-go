@@ -25,16 +25,7 @@ func XAdd(args []string) ([]byte, error) {
 	_, err = store.CM.SetOrUpdate(
 		args[0],
 		func() store.StoredValue {
-			if streamId.GenerateSequence {
-				if streamId.Ms == 0 {
-					streamId.Sequence = 1
-				} else {
-					streamId.Sequence = 0
-				}
-
-				streamId.GenerateSequence = false
-			}
-
+			streamId.GenerateValues(nil)
 			return store.NewStreamValue([]store.StreamId{streamId})
 		},
 		func(storedValue *store.StoredValue) error {
@@ -42,12 +33,15 @@ func XAdd(args []string) ([]byte, error) {
 				return errWrongtypeOperation
 			}
 
+			streamId.GenerateValues(storedValue.Xval)
+
 			if !CanAppendKey(storedValue.Xval, &streamId) {
 				return errStreamIdTooSmall
 			}
 
 			storedValue.Xval = append(storedValue.Xval, streamId)
 			//TODO: store key value pairs to stream
+
 			return nil
 		},
 	)
@@ -63,19 +57,8 @@ func XAdd(args []string) ([]byte, error) {
 
 // parse -> (newId.generate(latest)) -> insert
 
-// TODO: this method is mixing the insert and generation steps
 func CanAppendKey(streamIds []store.StreamId, newId *store.StreamId) bool {
-	if len(streamIds) <= 0 {
-		if newId.GenerateSequence {
-			if newId.Ms == 0 {
-				newId.Sequence = 1
-			} else {
-				newId.Sequence = 0
-			}
-
-			newId.GenerateSequence = false
-		}
-
+	if len(streamIds) == 0 {
 		return true
 	}
 
@@ -83,16 +66,6 @@ func CanAppendKey(streamIds []store.StreamId, newId *store.StreamId) bool {
 
 	if newId.Ms < latest.Ms {
 		return false
-	}
-
-	if newId.GenerateSequence {
-		if latest.Ms == newId.Ms {
-			newId.Sequence = latest.Sequence + 1
-		} else {
-			newId.Sequence = 0
-		}
-
-		newId.GenerateSequence = false
 	}
 
 	if newId.Ms == latest.Ms && newId.Sequence <= latest.Sequence {
