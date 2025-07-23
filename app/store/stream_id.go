@@ -8,8 +8,10 @@ import (
 )
 
 type StreamId struct {
-	Ms       int64
-	Sequence int64
+	Ms               int64
+	GenerateMs       bool
+	Sequence         int64
+	GenerateSequence bool
 }
 
 func (id StreamId) String() string {
@@ -31,10 +33,14 @@ func ParseStreamId(id string) (StreamId, error) {
 		return StreamId{}, fmt.Errorf("error parsing millisecond part: %w", err)
 	}
 
+	if splitId[1] == "*" {
+		return StreamId{msPart, false, -1, true}, nil
+	}
+
 	sequencePart, err := strconv.ParseInt(splitId[1], 10, 64)
 	if err != nil {
 		return StreamId{}, fmt.Errorf("error parsing sequence part: %w", err)
 	}
 
-	return StreamId{msPart, sequencePart}, nil
+	return StreamId{msPart, false, sequencePart, false}, nil
 }
