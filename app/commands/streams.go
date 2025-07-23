@@ -25,9 +25,9 @@ func XAdd(args []string) ([]byte, error) {
 		args[0],
 		func() store.StoredValue {
 			streamId.GenerateValues(nil)
-			entry := store.EmptyStreamEntry(streamId)
+			streamEntry := store.NewStreamEntry(streamId, args[2:])
 
-			return store.NewStreamValue([]store.StreamEntry{entry})
+			return store.NewStreamValue([]store.StreamEntry{streamEntry})
 		},
 		func(storedValue *store.StoredValue) error {
 			if storedValue.Type != store.TypeStream {
