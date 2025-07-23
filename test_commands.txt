@@ -29,3 +29,4 @@ printf '*3\r\n$5\r\nRPUSH\r\n$4\r\nlist\r\n$5\r\nberry\r\n' | nc localhost 6379 
 wait 
 
 printf '*5\r\n$4\r\nXADD\r\n$9\r\nraspberry\r\n$3\r\n1-1\r\n$9\r\npineapple\r\n$10\r\nstrawberry\r\n' | nc localhost 6379
+printf '*4\r\n$6\r\nXRANGE\r\n$5\r\ngrape\r\n$3\r\n0-2\r\n$3\r\n0-4\r\n' | nc localhost 6379

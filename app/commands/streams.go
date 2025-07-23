@@ -86,19 +86,26 @@ func XRange(args []string) ([]byte, error) {
 
 	result := storedValue.Xval[startIdx : endIdx+1]
 
-	//format response
+	return FormatStreamEntries(result), nil
+}
 
-	resultStrings := []string{}
+func FormatStreamEntries(entries []store.StreamEntry) []byte {
+	result := fmt.Appendf(nil, "*%v\r\n", len(entries))
 
-	//TODO: improve this to not have so much byte<->string back and forth
-	for _, val := range result {
-		pairs := protocol.FormatBulkStringArray(val.Pairs)
-		entry := protocol.FormatBulkStringArray([]string{val.Id.String(), string(pairs)})
-
-		resultStrings = append(resultStrings, string(entry))
+	for _, entry := range entries {
+		result = append(result, FormatStreamEntry(entry)...)
 	}
 
-	return protocol.FormatBulkStringArray(resultStrings), nil
+	return result
+}
+
+func FormatStreamEntry(entry store.StreamEntry) []byte {
+	array := fmt.Append(nil, "*2\r\n")
+
+	array = append(array, protocol.FormatBulkString(entry.Id.String())...)
+	array = append(array, protocol.FormatBulkStringArray(entry.Pairs)...)
+
+	return array
 }
 
 func FindIndex(id store.StreamId, entries []store.StreamEntry) (int, bool) {
