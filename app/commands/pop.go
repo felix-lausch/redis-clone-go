@@ -89,7 +89,7 @@ func Blpop(args []string) ([]byte, error) {
 				return nil
 			}
 
-			storedValue.AddChannel(c)
+			storedValue.AddListListener(c)
 			return nil
 		},
 	)
@@ -116,7 +116,7 @@ func Blpop(args []string) ([]byte, error) {
 		return protocol.FormatBulkStringArray([]string{args[0], result}), nil
 
 	case <-timeoutChannel:
-		err = removeChannel(args[0], c)
+		err = removeListListener(args[0], c)
 		if err != nil {
 			return nil, fmt.Errorf("error removing channel: %w", err)
 		}
@@ -125,7 +125,7 @@ func Blpop(args []string) ([]byte, error) {
 	}
 }
 
-func removeChannel(key string, c chan string) error {
+func removeListListener(key string, c chan string) error {
 	_, err := store.CM.Update(
 		key,
 		func(storedValue *store.StoredValue) error {
@@ -133,7 +133,7 @@ func removeChannel(key string, c chan string) error {
 				return errWrongtypeOperation
 			}
 
-			storedValue.Listeners = slices.DeleteFunc(storedValue.Listeners, func(channel chan string) bool {
+			storedValue.ListListeners = slices.DeleteFunc(storedValue.ListListeners, func(channel chan string) bool {
 				return channel == c
 			})
 

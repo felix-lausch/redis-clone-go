@@ -23,12 +23,12 @@ func Rpush(args []string) ([]byte, error) {
 				return errWrongtypeOperation
 			}
 
-			if len(storedValue.Listeners) == 0 {
+			if len(storedValue.ListListeners) == 0 {
 				storedValue.Lval = append(storedValue.Lval, args[1:]...)
 				return nil
 			}
 
-			handleListeners(storedValue, args[1:], false)
+			handleListListeners(storedValue, args[1:], false)
 			returnCodeCraftersError = true
 			return nil
 		})
@@ -60,13 +60,13 @@ func Lpush(args []string) ([]byte, error) {
 				return errWrongtypeOperation
 			}
 
-			if len(storedValue.Listeners) == 0 {
+			if len(storedValue.ListListeners) == 0 {
 				storedValue.Lval = append(reverseArray(args[1:]), storedValue.Lval...)
 				return nil
 			}
 
 			valsReversed := reverseArray(args[1:])
-			handleListeners(storedValue, valsReversed, true)
+			handleListListeners(storedValue, valsReversed, true)
 			return nil
 		})
 
@@ -77,15 +77,15 @@ func Lpush(args []string) ([]byte, error) {
 	return protocol.FormatInt(len(storedValue.Lval), false), nil
 }
 
-func handleListeners(storedValue *store.StoredValue, listValues []string, prepend bool) {
-	limit := min(len(storedValue.Listeners), len(listValues))
+func handleListListeners(storedValue *store.StoredValue, listValues []string, prepend bool) {
+	limit := min(len(storedValue.ListListeners), len(listValues))
 
 	for i := range limit {
-		storedValue.Listeners[i] <- listValues[i]
-		close(storedValue.Listeners[i])
+		storedValue.ListListeners[i] <- listValues[i]
+		close(storedValue.ListListeners[i])
 	}
 
-	storedValue.Listeners = storedValue.Listeners[limit:]
+	storedValue.ListListeners = storedValue.ListListeners[limit:]
 
 	if prepend {
 		storedValue.Lval = append(listValues[limit:], storedValue.Lval...)

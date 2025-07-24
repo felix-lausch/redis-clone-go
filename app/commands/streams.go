@@ -6,7 +6,10 @@ import (
 	"math"
 	"redis-clone-go/app/protocol"
 	"redis-clone-go/app/store"
+	"slices"
+	"strconv"
 	"strings"
+	"time"
 )
 
 func XAdd(args []string) ([]byte, error) {
@@ -44,6 +47,7 @@ func XAdd(args []string) ([]byte, error) {
 
 			streamEntry := store.NewStreamEntry(streamId, args[2:])
 			storedValue.Xval = append(storedValue.Xval, streamEntry)
+			handleStreamListeners(args[0], storedValue, streamEntry)
 
 			return nil
 		},
@@ -93,17 +97,32 @@ func XRead(args []string) ([]byte, error) {
 		return nil, errArgNumber
 	}
 
-	if strings.ToLower(args[0]) != "streams" {
-		return nil, errors.New("you didnt write streams :(")
+	var timeoutMs int64
+	var err error
+	var blocking bool
+
+	if strings.ToUpper(args[0]) == "BLOCK" {
+		timeoutMs, err = strconv.ParseInt(args[1], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing block timeout: %w", err)
+		}
+
+		blocking = true
 	}
 
-	keysAndIds := args[1:]
-	half := len(keysAndIds) / 2
-	results := map[string][]store.StreamEntry{}
+	streamsIdx := findStreamsIndex(args)
+	if streamsIdx < 0 {
+		return nil, errors.New("missing streams argument")
+	}
 
-	//TODO: what happens if i have multiple same keys?
-	for i := range half {
-		id, err := store.ParseStreamId(keysAndIds[i+half])
+	keysAndIds := args[streamsIdx+1:]
+	numKeys := len(keysAndIds) / 2
+	results := map[string][]store.StreamEntry{}
+	listeners := make([]chan store.StreamEntry, numKeys)
+
+	//TODO: what happens if i have duplicate keys?
+	for i := range numKeys {
+		id, err := store.ParseStreamId(keysAndIds[i+numKeys])
 		if err != nil {
 			return nil, fmt.Errorf("error parsing stream id: %w", err)
 		}
@@ -111,7 +130,15 @@ func XRead(args []string) ([]byte, error) {
 		key := keysAndIds[i]
 		storedValue, ok := store.CM.Get(key)
 		if !ok {
-			return nil, errors.New("blocking not implemented")
+			if blocking {
+				c := make(chan store.StreamEntry, 1)
+				listeners[i] = c
+
+				//TODO: this set operation is a concurrency issue
+				store.CM.Set(key, store.NewStreamListener(c))
+			}
+
+			continue
 		}
 
 		if storedValue.Type != store.TypeStream {
@@ -119,10 +146,43 @@ func XRead(args []string) ([]byte, error) {
 		}
 
 		result := getXReadResult(id, storedValue.Xval)
+		//TODO: should only add if result has len > 0 -> but this affects the format function as well
 		results[key] = result
 	}
 
-	return FormatXReadResponse(results, keysAndIds[:half]), nil
+	//TODO: this case should only execute when there are actually entries behind the keys. the above todo is related
+	if len(results) > 0 {
+		return FormatXReadResponse(results, keysAndIds[:numKeys]), nil
+	} else if !blocking {
+		return protocol.FormatNullBulkString(), nil
+	}
+
+	var timeoutChannel <-chan time.Time
+	if timeoutMs > 0 {
+		timeoutChannel = time.After(time.Duration(timeoutMs * int64(time.Millisecond)))
+	}
+
+	select {
+	case result, ok := <-listeners[0]:
+		if !ok {
+			return nil, errors.New("error receiving value from stream")
+		}
+
+		//TODO: need to listen on channel that would return key+entries
+		return FormatXReadResponse(
+			map[string][]store.StreamEntry{"key": {result}},
+			[]string{"key"},
+		), nil
+
+	case <-timeoutChannel:
+		//TODO: read key from listeners array
+		err = removeStreamListener(args[3], listeners[0])
+		if err != nil {
+			return nil, fmt.Errorf("error removing channel: %w", err)
+		}
+
+		return protocol.FormatNullBulkString(), nil
+	}
 }
 
 func parseXRangeStartId(id string) (store.StreamId, error) {
@@ -159,6 +219,18 @@ func findIndex(id store.StreamId, entries []store.StreamEntry, start bool) (int,
 	return len(entries) - 1, true
 }
 
+func findStreamsIndex(array []string) int {
+	s := strings.ToUpper("STREAMS")
+
+	for i := range len(array) {
+		if s == strings.ToUpper(array[i]) {
+			return i
+		}
+	}
+
+	return -1
+}
+
 func getXReadResult(id store.StreamId, entries []store.StreamEntry) []store.StreamEntry {
 	idx := 0
 
@@ -176,23 +248,36 @@ func getXReadResult(id store.StreamId, entries []store.StreamEntry) []store.Stre
 }
 
 // TODO: should these sit here or inside of the protocols package?
-func FormatStreamEntries(entries []store.StreamEntry) []byte {
-	result := fmt.Appendf(nil, "*%v\r\n", len(entries))
+func FormatXReadResponse(response map[string][]store.StreamEntry, orderedKeys []string) []byte {
+	count := 0
+	for _, entries := range response {
+		if len(entries) > 0 {
+			count++
+		}
+	}
 
-	for _, entry := range entries {
-		result = append(result, FormatStreamEntry(entry)...)
+	result := fmt.Appendf(nil, "*%v\r\n", count)
+
+	for _, key := range orderedKeys {
+		entries := response[key]
+
+		if len(entries) == 0 {
+			continue
+		}
+
+		result = append(result, []byte("*2\r\n")...)
+		result = append(result, protocol.FormatBulkString(key)...)
+		result = append(result, FormatStreamEntries(entries)...)
 	}
 
 	return result
 }
 
-func FormatXReadResponse(response map[string][]store.StreamEntry, orderedKeys []string) []byte {
-	result := fmt.Appendf(nil, "*%v\r\n", len(response))
+func FormatStreamEntries(entries []store.StreamEntry) []byte {
+	result := fmt.Appendf(nil, "*%v\r\n", len(entries))
 
-	for _, key := range orderedKeys {
-		result = append(result, []byte("*2\r\n")...)
-		result = append(result, protocol.FormatBulkString(key)...)
-		result = append(result, FormatStreamEntries(response[key])...)
+	for _, entry := range entries {
+		result = append(result, FormatStreamEntry(entry)...)
 	}
 
 	return result
@@ -205,4 +290,48 @@ func FormatStreamEntry(entry store.StreamEntry) []byte {
 	result = append(result, protocol.FormatBulkStringArray(entry.Pairs)...)
 
 	return result
+}
+
+func removeStreamListener(key string, c chan store.StreamEntry) error {
+	_, err := store.CM.Update(
+		key,
+		func(storedValue *store.StoredValue) error {
+			if storedValue.Type != store.TypeStream {
+				return errWrongtypeOperation
+			}
+
+			storedValue.StreamListeners = slices.DeleteFunc(storedValue.StreamListeners, func(channel chan store.StreamEntry) bool {
+				return channel == c
+			})
+
+			return nil
+		},
+	)
+
+	if err != nil {
+		if errors.Is(err, store.ErrKeyNotFound) {
+			return errors.New("error getting stream for key")
+		}
+
+		return err
+	}
+
+	return nil
+}
+
+func handleStreamListeners(key string, storedValue *store.StoredValue, latestEntry store.StreamEntry) {
+	if len(storedValue.StreamListeners) == 0 || len(storedValue.Xval) == 0 {
+		return
+	}
+
+	//TODO: remove this
+	fmt.Printf("handling stream listeners for: %v\r\n", key)
+
+	//TODO: the key needs to be published in the channel as well
+	for i := range len(storedValue.StreamListeners) {
+		storedValue.StreamListeners[i] <- latestEntry
+		close(storedValue.ListListeners[i])
+	}
+
+	storedValue.StreamListeners = storedValue.StreamListeners[:0]
 }

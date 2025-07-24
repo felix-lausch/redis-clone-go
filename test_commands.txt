@@ -39,4 +39,5 @@ printf '*4\r\n$5\r\nXREAD\r\n$7\r\nstreams\r\n$4\r\npear\r\n$3\r\n0-3\r\n' | nc 
 printf '*6\r\n$5\r\nXREAD\r\n$7\r\nstreams\r\n$4\r\npear\r\n$3\r\n0-0\r\n$4\r\npeak\r\n$3\r\n0-0\r\n' | nc localhost 6379
 
 printf '*6\r\n$5\r\nXREAD\r\n$7\r\nstreams\r\n$9\r\npineapple\r\n$6\r\norange\r\n$3\r\n0-0\r\n$3\r\n0-1\r\n' | nc localhost 6379
+printf '*8\r\n$5\r\nXREAD\r\n$5\r\nBLOCK\r\n$4\r\n3000\r\n$7\r\nstreams\r\n$9\r\npineapple\r\n$6\r\norange\r\n$3\r\n0-0\r\n$3\r\n0-1\r\n' | nc localhost 6379
 
