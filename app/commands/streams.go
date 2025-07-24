@@ -89,7 +89,7 @@ func XRange(args []string) ([]byte, error) {
 }
 
 func XRead(args []string) ([]byte, error) {
-	if len(args) < 3 {
+	if len(args) < 3 || len(args)%2 != 1 {
 		return nil, errArgNumber
 	}
 
@@ -97,23 +97,29 @@ func XRead(args []string) ([]byte, error) {
 		return nil, errors.New("you didnt write streams :(")
 	}
 
-	id, err := store.ParseStreamId(args[2])
-	if err != nil {
-		return nil, fmt.Errorf("error parsing stream id: %w", err)
+	results := map[string][]store.StreamEntry{}
+
+	//TODO: what happens if i have multiple same keys?
+	for i := 1; i < len(args); i += 2 {
+		id, err := store.ParseStreamId(args[i+1])
+		if err != nil {
+			return nil, fmt.Errorf("error parsing stream id: %w", err)
+		}
+
+		storedValue, ok := store.CM.Get(args[i])
+		if !ok {
+			return nil, errors.New("blocking not implemented")
+		}
+
+		if storedValue.Type != store.TypeStream {
+			return nil, errWrongtypeOperation
+		}
+
+		result := getXReadResult(id, storedValue.Xval)
+		results[args[i]] = result
 	}
 
-	storedValue, ok := store.CM.Get(args[1])
-	if !ok {
-		return nil, errors.New("blocking not implemented")
-	}
-
-	if storedValue.Type != store.TypeStream {
-		return nil, errWrongtypeOperation
-	}
-
-	result := getXReadResult(id, storedValue.Xval)
-
-	return FormatXReadResponse(args[1], result), nil
+	return FormatXReadResponse(results), nil
 }
 
 func parseXRangeStartId(id string) (store.StreamId, error) {
@@ -177,12 +183,14 @@ func FormatStreamEntries(entries []store.StreamEntry) []byte {
 	return result
 }
 
-func FormatXReadResponse(key string, entries []store.StreamEntry) []byte {
-	result := fmt.Append(nil, "*1\r\n*2\r\n")
+func FormatXReadResponse(response map[string][]store.StreamEntry) []byte {
+	result := fmt.Appendf(nil, "*%v\r\n", len(response))
 
-	result = append(result, protocol.FormatBulkString(key)...)
-	// array = append(array, fmt.Sprintf("*%v\r\n", ent)...)
-	result = append(result, FormatStreamEntries(entries)...)
+	for key, entries := range response {
+		result = append(result, []byte("*2\r\n")...)
+		result = append(result, protocol.FormatBulkString(key)...)
+		result = append(result, FormatStreamEntries(entries)...)
+	}
 
 	return result
 }
