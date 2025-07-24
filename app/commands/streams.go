@@ -111,9 +111,7 @@ func XRead(args []string) ([]byte, error) {
 		return nil, errWrongtypeOperation
 	}
 
-	idx, _ := findIndex(id, storedValue.Xval, true)
-	//TODO: this is not safe finde better way to determine the index
-	result := storedValue.Xval[idx+1:]
+	result := getXReadResult(id, storedValue.Xval)
 
 	return FormatXReadResponse(args[1], result), nil
 }
@@ -150,6 +148,22 @@ func findIndex(id store.StreamId, entries []store.StreamEntry, start bool) (int,
 	}
 
 	return len(entries) - 1, true
+}
+
+func getXReadResult(id store.StreamId, entries []store.StreamEntry) []store.StreamEntry {
+	idx := 0
+
+	for i, entry := range entries {
+		if entry.Id.IsEqualTo(id) {
+			idx = i + 1
+			break
+		} else if entry.Id.IsGreaterThan(id) {
+			idx = i
+			break
+		}
+	}
+
+	return entries[idx:]
 }
 
 // TODO: should these sit here or inside of the protocols package?

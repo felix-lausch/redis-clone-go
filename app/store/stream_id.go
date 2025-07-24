@@ -70,6 +70,22 @@ func (id *StreamId) CanAppendKey(previousIds []StreamEntry) bool {
 	return true
 }
 
+func (id *StreamId) IsEqualTo(idToCompare StreamId) bool {
+	return id.Ms == idToCompare.Ms && id.Sequence == idToCompare.Sequence
+}
+
+func (id *StreamId) IsGreaterThan(idToCompare StreamId) bool {
+	if id.Ms > idToCompare.Ms {
+		return true
+	}
+
+	if id.Ms == idToCompare.Ms && id.Sequence > idToCompare.Sequence {
+		return true
+	}
+
+	return false
+}
+
 func ParseStreamId(id string) (StreamId, error) {
 	const idSeparator string = "-"
 	const asterisk string = "*"
