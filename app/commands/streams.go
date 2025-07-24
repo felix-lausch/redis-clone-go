@@ -97,16 +97,19 @@ func XRead(args []string) ([]byte, error) {
 		return nil, errors.New("you didnt write streams :(")
 	}
 
+	keysAndIds := args[1:]
+	half := len(keysAndIds) / 2
 	results := map[string][]store.StreamEntry{}
 
 	//TODO: what happens if i have multiple same keys?
-	for i := 1; i < len(args); i += 2 {
-		id, err := store.ParseStreamId(args[i+1])
+	for i := range half {
+		id, err := store.ParseStreamId(keysAndIds[i+half])
 		if err != nil {
 			return nil, fmt.Errorf("error parsing stream id: %w", err)
 		}
 
-		storedValue, ok := store.CM.Get(args[i])
+		key := keysAndIds[i]
+		storedValue, ok := store.CM.Get(key)
 		if !ok {
 			return nil, errors.New("blocking not implemented")
 		}
@@ -116,7 +119,7 @@ func XRead(args []string) ([]byte, error) {
 		}
 
 		result := getXReadResult(id, storedValue.Xval)
-		results[args[i]] = result
+		results[key] = result
 	}
 
 	return FormatXReadResponse(results), nil
