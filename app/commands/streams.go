@@ -6,6 +6,7 @@ import (
 	"math"
 	"redis-clone-go/app/protocol"
 	"redis-clone-go/app/store"
+	"strings"
 )
 
 func XAdd(args []string) ([]byte, error) {
@@ -60,12 +61,12 @@ func XRange(args []string) ([]byte, error) {
 		return nil, errArgNumber
 	}
 
-	start, err := ParseXRangeStartId(args[1])
+	start, err := parseXRangeStartId(args[1])
 	if err != nil {
 		return nil, fmt.Errorf("error parsing start: %w", err)
 	}
 
-	end, err := ParseXRangeEndId(args[2])
+	end, err := parseXRangeEndId(args[2])
 	if err != nil {
 		return nil, fmt.Errorf("error parsing end: %w", err)
 	}
@@ -79,15 +80,45 @@ func XRange(args []string) ([]byte, error) {
 		return nil, errWrongtypeOperation
 	}
 
-	startIdx, _ := FindIndex(start, storedValue.Xval, true)
-	endIdx, _ := FindIndex(end, storedValue.Xval, false)
+	startIdx, _ := findIndex(start, storedValue.Xval, true)
+	endIdx, _ := findIndex(end, storedValue.Xval, false)
 
 	result := storedValue.Xval[startIdx : endIdx+1]
 
 	return FormatStreamEntries(result), nil
 }
 
-func ParseXRangeStartId(id string) (store.StreamId, error) {
+func XRead(args []string) ([]byte, error) {
+	if len(args) < 3 {
+		return nil, errArgNumber
+	}
+
+	if strings.ToLower(args[0]) != "streams" {
+		return nil, errors.New("you didnt write streams :(")
+	}
+
+	id, err := store.ParseStreamId(args[2])
+	if err != nil {
+		return nil, fmt.Errorf("error parsing stream id: %w", err)
+	}
+
+	storedValue, ok := store.CM.Get(args[1])
+	if !ok {
+		return nil, errors.New("blocking not implemented")
+	}
+
+	if storedValue.Type != store.TypeStream {
+		return nil, errWrongtypeOperation
+	}
+
+	idx, _ := findIndex(id, storedValue.Xval, true)
+	//TODO: this is not safe finde better way to determine the index
+	result := storedValue.Xval[idx+1:]
+
+	return FormatXReadResponse(args[1], result), nil
+}
+
+func parseXRangeStartId(id string) (store.StreamId, error) {
 	if id == "-" {
 		//minimum id
 		return store.StreamId{Ms: 0, Sequence: 1}, nil
@@ -96,7 +127,7 @@ func ParseXRangeStartId(id string) (store.StreamId, error) {
 	return store.ParseStreamId(id)
 }
 
-func ParseXRangeEndId(id string) (store.StreamId, error) {
+func parseXRangeEndId(id string) (store.StreamId, error) {
 	if id == "+" {
 		//maximum id
 		return store.StreamId{Ms: math.MaxInt64, Sequence: math.MaxInt64}, nil
@@ -105,7 +136,7 @@ func ParseXRangeEndId(id string) (store.StreamId, error) {
 	return store.ParseStreamId(id)
 }
 
-func FindIndex(id store.StreamId, entries []store.StreamEntry, start bool) (int, bool) {
+func findIndex(id store.StreamId, entries []store.StreamEntry, start bool) (int, bool) {
 	for i, val := range entries {
 		//TODO: this is too simple, it doesnt handle * yet
 
@@ -121,6 +152,7 @@ func FindIndex(id store.StreamId, entries []store.StreamEntry, start bool) (int,
 	return len(entries) - 1, true
 }
 
+// TODO: should these sit here or inside of the protocols package?
 func FormatStreamEntries(entries []store.StreamEntry) []byte {
 	result := fmt.Appendf(nil, "*%v\r\n", len(entries))
 
@@ -131,11 +163,21 @@ func FormatStreamEntries(entries []store.StreamEntry) []byte {
 	return result
 }
 
+func FormatXReadResponse(key string, entries []store.StreamEntry) []byte {
+	result := fmt.Append(nil, "*1\r\n*2\r\n")
+
+	result = append(result, protocol.FormatBulkString(key)...)
+	// array = append(array, fmt.Sprintf("*%v\r\n", ent)...)
+	result = append(result, FormatStreamEntries(entries)...)
+
+	return result
+}
+
 func FormatStreamEntry(entry store.StreamEntry) []byte {
-	array := fmt.Append(nil, "*2\r\n")
+	result := fmt.Append(nil, "*2\r\n")
 
-	array = append(array, protocol.FormatBulkString(entry.Id.String())...)
-	array = append(array, protocol.FormatBulkStringArray(entry.Pairs)...)
+	result = append(result, protocol.FormatBulkString(entry.Id.String())...)
+	result = append(result, protocol.FormatBulkStringArray(entry.Pairs)...)
 
-	return array
+	return result
 }
