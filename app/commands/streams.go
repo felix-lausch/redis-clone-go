@@ -122,7 +122,7 @@ func XRead(args []string) ([]byte, error) {
 		results[key] = result
 	}
 
-	return FormatXReadResponse(results), nil
+	return FormatXReadResponse(results, keysAndIds[:half]), nil
 }
 
 func parseXRangeStartId(id string) (store.StreamId, error) {
@@ -186,13 +186,13 @@ func FormatStreamEntries(entries []store.StreamEntry) []byte {
 	return result
 }
 
-func FormatXReadResponse(response map[string][]store.StreamEntry) []byte {
+func FormatXReadResponse(response map[string][]store.StreamEntry, orderedKeys []string) []byte {
 	result := fmt.Appendf(nil, "*%v\r\n", len(response))
 
-	for key, entries := range response {
+	for _, key := range orderedKeys {
 		result = append(result, []byte("*2\r\n")...)
 		result = append(result, protocol.FormatBulkString(key)...)
-		result = append(result, FormatStreamEntries(entries)...)
+		result = append(result, FormatStreamEntries(response[key])...)
 	}
 
 	return result
