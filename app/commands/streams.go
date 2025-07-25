@@ -117,7 +117,7 @@ func XRead(args []string) ([]byte, error) {
 
 	keysAndIds := args[streamsIdx+1:]
 	numKeys := len(keysAndIds) / 2
-	results := map[string][]store.StreamEntry{}
+	results := []xReadResult{}
 	listeners := make([]chan store.StreamEntry, numKeys)
 
 	//TODO: what happens if i have duplicate keys?
@@ -145,14 +145,15 @@ func XRead(args []string) ([]byte, error) {
 			return nil, errWrongtypeOperation
 		}
 
-		result := getXReadResult(id, storedValue.Xval)
-		//TODO: should only add if result has len > 0 -> but this affects the format function as well
-		results[key] = result
+		result := getxReadResult(key, id, storedValue.Xval)
+
+		if len(result.entries) > 0 {
+			results = append(results, result)
+		}
 	}
 
-	//TODO: this case should only execute when there are actually entries behind the keys. the above todo is related
 	if len(results) > 0 {
-		return FormatXReadResponse(results, keysAndIds[:numKeys]), nil
+		return FormatXReadResponse(results), nil
 	} else if !blocking {
 		return protocol.FormatNullBulkString(), nil
 	}
@@ -163,19 +164,16 @@ func XRead(args []string) ([]byte, error) {
 	}
 
 	select {
+	//TODO: need to listen on channel that would return key+entries
 	case result, ok := <-listeners[0]:
 		if !ok {
 			return nil, errors.New("error receiving value from stream")
 		}
 
-		//TODO: need to listen on channel that would return key+entries
-		return FormatXReadResponse(
-			map[string][]store.StreamEntry{"key": {result}},
-			[]string{"key"},
-		), nil
+		return FormatXReadResponse([]xReadResult{{"key", []store.StreamEntry{result}}}), nil
 
 	case <-timeoutChannel:
-		//TODO: read key from listeners array
+		//TODO: remove all listeners -> listeners should contain key
 		err = removeStreamListener(args[3], listeners[0])
 		if err != nil {
 			return nil, fmt.Errorf("error removing channel: %w", err)
@@ -231,7 +229,7 @@ func findStreamsIndex(array []string) int {
 	return -1
 }
 
-func getXReadResult(id store.StreamId, entries []store.StreamEntry) []store.StreamEntry {
+func getxReadResult(key string, id store.StreamId, entries []store.StreamEntry) xReadResult {
 	idx := 0
 
 	for i, entry := range entries {
@@ -244,33 +242,20 @@ func getXReadResult(id store.StreamId, entries []store.StreamEntry) []store.Stre
 		}
 	}
 
-	return entries[idx:]
+	return xReadResult{key, entries[idx:]}
 }
 
 // TODO: should these sit here or inside of the protocols package?
-func FormatXReadResponse(response map[string][]store.StreamEntry, orderedKeys []string) []byte {
-	count := 0
-	for _, entries := range response {
-		if len(entries) > 0 {
-			count++
-		}
+func FormatXReadResponse(results []xReadResult) []byte {
+	response := fmt.Appendf(nil, "*%v\r\n", len(results))
+
+	for _, result := range results {
+		response = append(response, []byte("*2\r\n")...)
+		response = append(response, protocol.FormatBulkString(result.key)...)
+		response = append(response, FormatStreamEntries(result.entries)...)
 	}
 
-	result := fmt.Appendf(nil, "*%v\r\n", count)
-
-	for _, key := range orderedKeys {
-		entries := response[key]
-
-		if len(entries) == 0 {
-			continue
-		}
-
-		result = append(result, []byte("*2\r\n")...)
-		result = append(result, protocol.FormatBulkString(key)...)
-		result = append(result, FormatStreamEntries(entries)...)
-	}
-
-	return result
+	return response
 }
 
 func FormatStreamEntries(entries []store.StreamEntry) []byte {
@@ -334,4 +319,9 @@ func handleStreamListeners(key string, storedValue *store.StoredValue, latestEnt
 	}
 
 	storedValue.StreamListeners = storedValue.StreamListeners[:0]
+}
+
+type xReadResult struct {
+	key     string
+	entries []store.StreamEntry
 }
