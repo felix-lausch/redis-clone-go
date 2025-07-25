@@ -47,7 +47,7 @@ func XAdd(args []string) ([]byte, error) {
 
 			streamEntry := store.NewStreamEntry(streamId, args[2:])
 			storedValue.Xval = append(storedValue.Xval, streamEntry)
-			handleStreamListeners(args[0], storedValue, streamEntry)
+			handleStreamListeners(storedValue, streamEntry)
 
 			return nil
 		},
@@ -118,7 +118,7 @@ func XRead(args []string) ([]byte, error) {
 	keysAndIds := args[streamsIdx+1:]
 	numKeys := len(keysAndIds) / 2
 	results := []xReadResult{}
-	listeners := make([]chan store.StreamEntry, numKeys)
+	listeners := make([]store.StreamListener, numKeys)
 
 	//TODO: what happens if i have duplicate keys?
 	for i := range numKeys {
@@ -132,10 +132,11 @@ func XRead(args []string) ([]byte, error) {
 		if !ok {
 			if blocking {
 				c := make(chan store.StreamEntry, 1)
-				listeners[i] = c
+				listener := store.StreamListener{C: c, Id: id}
+				listeners[i] = listener
 
 				//TODO: this set operation is a concurrency issue
-				store.CM.Set(key, store.NewStreamListener(c))
+				store.CM.Set(key, store.NewStreamListener(listener))
 			}
 
 			continue
@@ -151,9 +152,10 @@ func XRead(args []string) ([]byte, error) {
 			results = append(results, result)
 		} else if blocking {
 			c := make(chan store.StreamEntry, 1)
-			listeners[i] = c
+			listener := store.StreamListener{C: c, Id: id}
+			listeners[i] = listener
 
-			storedValue.AddStreamListener(c)
+			storedValue.AddStreamListener(listener)
 			//TODO: this set operation is a concurrency issue
 			store.CM.Set(key, storedValue)
 		}
@@ -173,16 +175,16 @@ func XRead(args []string) ([]byte, error) {
 
 	select {
 	//TODO: need to listen on channel that would return key+entries
-	case result, ok := <-listeners[0]:
+	case result, ok := <-listeners[0].C:
 		if !ok {
 			return nil, errors.New("error receiving value from stream")
 		}
 
-		return FormatXReadResponse([]xReadResult{{"key", []store.StreamEntry{result}}}), nil
+		return FormatXReadResponse([]xReadResult{{args[3], []store.StreamEntry{result}}}), nil
 
 	case <-timeoutChannel:
 		//TODO: remove all listeners -> listeners should contain key
-		err = removeStreamListener(args[3], listeners[0])
+		err = removeStreamListener(args[3], listeners[0].Id)
 		if err != nil {
 			return nil, fmt.Errorf("error removing channel: %w", err)
 		}
@@ -238,19 +240,15 @@ func findStreamsIndex(array []string) int {
 }
 
 func getxReadResult(key string, id store.StreamId, entries []store.StreamEntry) xReadResult {
-	idx := 0
-
 	for i, entry := range entries {
 		if entry.Id.IsEqualTo(id) {
-			idx = i + 1
-			break
+			return xReadResult{key, entries[i+1:]}
 		} else if entry.Id.IsGreaterThan(id) {
-			idx = i
-			break
+			return xReadResult{key, entries[i:]}
 		}
 	}
 
-	return xReadResult{key, entries[idx:]}
+	return xReadResult{key, entries[:0]}
 }
 
 // TODO: should these sit here or inside of the protocols package?
@@ -285,16 +283,16 @@ func FormatStreamEntry(entry store.StreamEntry) []byte {
 	return result
 }
 
-func removeStreamListener(key string, c chan store.StreamEntry) error {
+func removeStreamListener(key string, id store.StreamId) error {
 	_, err := store.CM.Update(
 		key,
-		func(storedValue *store.StoredValue) error {
-			if storedValue.Type != store.TypeStream {
+		func(sv *store.StoredValue) error {
+			if sv.Type != store.TypeStream {
 				return errWrongtypeOperation
 			}
 
-			storedValue.StreamListeners = slices.DeleteFunc(storedValue.StreamListeners, func(channel chan store.StreamEntry) bool {
-				return channel == c
+			sv.StreamListeners = slices.DeleteFunc(sv.StreamListeners, func(l store.StreamListener) bool {
+				return l.Id.IsEqualTo(id)
 			})
 
 			return nil
@@ -312,23 +310,24 @@ func removeStreamListener(key string, c chan store.StreamEntry) error {
 	return nil
 }
 
-func handleStreamListeners(key string, storedValue *store.StoredValue, latestEntry store.StreamEntry) {
+func handleStreamListeners(storedValue *store.StoredValue, latestEntry store.StreamEntry) {
 	if len(storedValue.StreamListeners) == 0 || len(storedValue.Xval) == 0 {
 		return
 	}
 
-	//TODO: remove this
-	fmt.Printf("handling stream listeners for: %v\r\n", key)
+	remainingListeners := make([]store.StreamListener, 0, len(storedValue.StreamListeners))
 
 	//TODO: the key needs to be published in the channel as well
-	for i := range len(storedValue.StreamListeners) {
-		//TODO: only publish to chan if the id is greater
-
-		storedValue.StreamListeners[i] <- latestEntry
-		close(storedValue.StreamListeners[i])
+	for _, listener := range storedValue.StreamListeners {
+		if latestEntry.Id.IsGreaterThan(listener.Id) {
+			listener.C <- latestEntry
+			close(listener.C)
+		} else {
+			remainingListeners = append(remainingListeners, listener)
+		}
 	}
 
-	storedValue.StreamListeners = storedValue.StreamListeners[:0]
+	storedValue.StreamListeners = remainingListeners
 }
 
 type xReadResult struct {

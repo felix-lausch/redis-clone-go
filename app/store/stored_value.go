@@ -17,7 +17,7 @@ type StoredValue struct {
 	Type            StoredValueType
 	ExpiresBy       int64
 	ListListeners   []chan string
-	StreamListeners []chan StreamEntry
+	StreamListeners []StreamListener
 }
 
 func (sv *StoredValue) AddListListener(c chan string) {
@@ -28,11 +28,11 @@ func (sv *StoredValue) AddListListener(c chan string) {
 	}
 }
 
-func (sv *StoredValue) AddStreamListener(c chan StreamEntry) {
+func (sv *StoredValue) AddStreamListener(listener StreamListener) {
 	if sv.StreamListeners == nil {
-		sv.StreamListeners = []chan StreamEntry{c}
+		sv.StreamListeners = []StreamListener{listener}
 	} else {
-		sv.StreamListeners = append(sv.StreamListeners, c)
+		sv.StreamListeners = append(sv.StreamListeners, listener)
 	}
 }
 
@@ -56,6 +56,12 @@ func NewStreamValue(xval []StreamEntry) StoredValue {
 	return StoredValue{"", nil, xval, TypeStream, -1, nil, nil}
 }
 
-func NewStreamListener(c chan StreamEntry) StoredValue {
-	return StoredValue{"", nil, []StreamEntry{}, TypeStream, -1, nil, []chan StreamEntry{c}}
+// TODO: find better name?
+func NewStreamListener(listener StreamListener) StoredValue {
+	return StoredValue{"", nil, []StreamEntry{}, TypeStream, -1, nil, []StreamListener{listener}}
+}
+
+type StreamListener struct {
+	C  chan StreamEntry
+	Id StreamId
 }
