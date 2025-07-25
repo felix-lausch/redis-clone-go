@@ -62,6 +62,7 @@ func NewStreamListener(listener StreamListener) StoredValue {
 }
 
 type StreamListener struct {
-	C  chan StreamEntry
-	Id StreamId
+	C   chan StreamEntry
+	Id  StreamId
+	Key string
 }

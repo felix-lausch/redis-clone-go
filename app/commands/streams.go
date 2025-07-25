@@ -132,7 +132,7 @@ func XRead(args []string) ([]byte, error) {
 		if !ok {
 			if blocking {
 				c := make(chan store.StreamEntry, 1)
-				listener := store.StreamListener{C: c, Id: id}
+				listener := store.StreamListener{C: c, Id: id, Key: key}
 				listeners[i] = listener
 
 				//TODO: this set operation is a concurrency issue
@@ -152,7 +152,7 @@ func XRead(args []string) ([]byte, error) {
 			results = append(results, result)
 		} else if blocking {
 			c := make(chan store.StreamEntry, 1)
-			listener := store.StreamListener{C: c, Id: id}
+			listener := store.StreamListener{C: c, Id: id, Key: key}
 			listeners[i] = listener
 
 			storedValue.AddStreamListener(listener)
@@ -167,10 +167,18 @@ func XRead(args []string) ([]byte, error) {
 		return protocol.FormatNullBulkString(), nil
 	}
 
+	resultChannel := make(chan blockXReadResult, 1)
 	var timeoutChannel <-chan time.Time
 	if timeoutMs > 0 {
 		timeoutChannel = time.After(time.Duration(timeoutMs * int64(time.Millisecond)))
-		fmt.Print(timeoutChannel) //TODO: remove this
+	}
+
+	for _, listener := range listeners {
+		go func(key string, c chan store.StreamEntry) {
+			if val, ok := <-c; ok {
+				resultChannel <- blockXReadResult{key, val}
+			}
+		}(listener.Key, listener.C)
 	}
 
 	select {
@@ -181,6 +189,10 @@ func XRead(args []string) ([]byte, error) {
 		}
 
 		return FormatXReadResponse([]xReadResult{{args[3], []store.StreamEntry{result}}}), nil
+	case res := <-resultChannel:
+		//TODO: this method needs adjustment
+		removeStreamListeners(res.key)
+		return FormatXReadResponse([]xReadResult{{res.key, []store.StreamEntry{res.entry}}}), nil
 
 	case <-timeoutChannel:
 		//TODO: remove all listeners -> listeners should contain key
@@ -310,6 +322,44 @@ func removeStreamListener(key string, id store.StreamId) error {
 	return nil
 }
 
+func removeStreamListeners(key string, toRemove []store.StreamListener) error {
+	if len(toRemove) == 0 {
+		return nil
+	}
+
+	// Create a set of IDs for quick lookup
+	removeIds := make(map[store.StreamId]struct{}, len(toRemove))
+	for _, listener := range toRemove {
+		removeIds[listener.Id] = struct{}{}
+	}
+
+	_, err := store.CM.Update(
+		key,
+		func(sv *store.StoredValue) error {
+			if sv.Type != store.TypeStream {
+				return errWrongtypeOperation
+			}
+
+			sv.StreamListeners = slices.DeleteFunc(sv.StreamListeners, func(l store.StreamListener) bool {
+				_, shouldRemove := removeIds[l.Id]
+				return shouldRemove
+			})
+
+			return nil
+		},
+	)
+
+	if err != nil {
+		if errors.Is(err, store.ErrKeyNotFound) {
+			return errors.New("error getting stream for key")
+		}
+
+		return err
+	}
+
+	return nil
+}
+
 func handleStreamListeners(storedValue *store.StoredValue, latestEntry store.StreamEntry) {
 	if len(storedValue.StreamListeners) == 0 || len(storedValue.Xval) == 0 {
 		return
@@ -333,4 +383,9 @@ func handleStreamListeners(storedValue *store.StoredValue, latestEntry store.Str
 type xReadResult struct {
 	key     string
 	entries []store.StreamEntry
+}
+
+type blockXReadResult struct {
+	key   string
+	entry store.StreamEntry
 }
