@@ -149,6 +149,13 @@ func XRead(args []string) ([]byte, error) {
 
 		if len(result.entries) > 0 {
 			results = append(results, result)
+		} else if blocking {
+			c := make(chan store.StreamEntry, 1)
+			listeners[i] = c
+
+			storedValue.AddStreamListener(c)
+			//TODO: this set operation is a concurrency issue
+			store.CM.Set(key, storedValue)
 		}
 	}
 
@@ -161,6 +168,7 @@ func XRead(args []string) ([]byte, error) {
 	var timeoutChannel <-chan time.Time
 	if timeoutMs > 0 {
 		timeoutChannel = time.After(time.Duration(timeoutMs * int64(time.Millisecond)))
+		fmt.Print(timeoutChannel) //TODO: remove this
 	}
 
 	select {
@@ -314,8 +322,10 @@ func handleStreamListeners(key string, storedValue *store.StoredValue, latestEnt
 
 	//TODO: the key needs to be published in the channel as well
 	for i := range len(storedValue.StreamListeners) {
+		//TODO: only publish to chan if the id is greater
+
 		storedValue.StreamListeners[i] <- latestEntry
-		close(storedValue.ListListeners[i])
+		close(storedValue.StreamListeners[i])
 	}
 
 	storedValue.StreamListeners = storedValue.StreamListeners[:0]
