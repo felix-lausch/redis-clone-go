@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math"
@@ -120,7 +121,6 @@ func XRead(args []string) ([]byte, error) {
 	results := []xReadResult{}
 	listeners := make([]store.StreamListener, numKeys)
 
-	//TODO: what happens if i have duplicate keys?
 	for i := range numKeys {
 		key := keysAndIds[i]
 		storedValue, ok := store.CM.Get(key)
@@ -172,7 +172,7 @@ func XRead(args []string) ([]byte, error) {
 		return protocol.FormatNullBulkString(), nil
 	}
 
-	resultChannel := make(chan blockXReadResult, 1)
+	resultChannel := make(chan xReadResult, 1)
 	var timeoutChannel <-chan time.Time
 	if timeoutMs > 0 {
 		timeoutChannel = time.After(time.Duration(timeoutMs * int64(time.Millisecond)))
@@ -187,7 +187,7 @@ func XRead(args []string) ([]byte, error) {
 			return nil, fmt.Errorf("error removing stream listeners: %w", err)
 		}
 
-		return FormatXReadResponse([]xReadResult{{res.key, []store.StreamEntry{res.entry}}}), nil
+		return FormatXReadResponse([]xReadResult{res}), nil
 
 	case <-timeoutChannel:
 		err = removeStreamListeners(listeners)
@@ -269,45 +269,47 @@ func getxReadResult(key string, id store.StreamId, entries []store.StreamEntry) 
 	return xReadResult{key, entries[:0]}
 }
 
-// TODO: should these sit here or inside of the protocols package?
 func FormatXReadResponse(results []xReadResult) []byte {
-	response := fmt.Appendf(nil, "*%v\r\n", len(results))
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "*%d\r\n", len(results))
 
 	for _, result := range results {
-		response = append(response, []byte("*2\r\n")...)
-		response = append(response, protocol.FormatBulkString(result.key)...)
-		response = append(response, FormatStreamEntries(result.entries)...)
+		buf.WriteString("*2\r\n")
+		buf.Write(protocol.FormatBulkString(result.key))
+		buf.Write(FormatStreamEntries(result.entries))
 	}
 
-	return response
+	return buf.Bytes()
 }
 
 func FormatStreamEntries(entries []store.StreamEntry) []byte {
-	result := fmt.Appendf(nil, "*%v\r\n", len(entries))
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "*%d\r\n", len(entries))
 
 	for _, entry := range entries {
-		result = append(result, FormatStreamEntry(entry)...)
+		buf.Write(FormatStreamEntry(entry))
 	}
 
-	return result
+	return buf.Bytes()
 }
 
 func FormatStreamEntry(entry store.StreamEntry) []byte {
-	result := fmt.Append(nil, "*2\r\n")
-
-	result = append(result, protocol.FormatBulkString(entry.Id.String())...)
-	result = append(result, protocol.FormatBulkStringArray(entry.Pairs)...)
-
-	return result
+	var buf bytes.Buffer
+	buf.WriteString("*2\r\n")
+	buf.Write(protocol.FormatBulkString(entry.Id.String()))
+	buf.Write(protocol.FormatBulkStringArray(entry.Pairs))
+	return buf.Bytes()
 }
 
-func listenForResult(listeners []store.StreamListener, resultChannel chan blockXReadResult) {
+func listenForResult(listeners []store.StreamListener, resultChannel chan xReadResult) {
+	writeXReadResult := func(key string, c chan store.StreamEntry) {
+		if val, ok := <-c; ok {
+			resultChannel <- xReadResult{key, []store.StreamEntry{val}}
+		}
+	}
+
 	for _, listener := range listeners {
-		go func(key string, c chan store.StreamEntry) {
-			if val, ok := <-c; ok {
-				resultChannel <- blockXReadResult{key, val}
-			}
-		}(listener.Key, listener.C)
+		go writeXReadResult(listener.Key, listener.C)
 	}
 }
 
@@ -371,7 +373,7 @@ func handleStreamListeners(storedValue *store.StoredValue, latestEntry store.Str
 		return
 	}
 
-	remainingListeners := make([]store.StreamListener, 0, len(storedValue.StreamListeners))
+	remainingListeners := make([]store.StreamListener, 0)
 
 	for _, listener := range storedValue.StreamListeners {
 		if latestEntry.Id.IsGreaterThan(listener.Id) {
@@ -388,9 +390,4 @@ func handleStreamListeners(storedValue *store.StoredValue, latestEntry store.Str
 type xReadResult struct {
 	key     string
 	entries []store.StreamEntry
-}
-
-type blockXReadResult struct {
-	key   string
-	entry store.StreamEntry
 }
