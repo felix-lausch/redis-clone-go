@@ -122,15 +122,15 @@ func XRead(args []string) ([]byte, error) {
 
 	//TODO: what happens if i have duplicate keys?
 	for i := range numKeys {
-		id, err := store.ParseStreamId(keysAndIds[i+numKeys])
-		if err != nil {
-			return nil, fmt.Errorf("error parsing stream id: %w", err)
-		}
-
 		key := keysAndIds[i]
 		storedValue, ok := store.CM.Get(key)
 		if !ok {
 			if blocking {
+				id, err := parseXReadId(keysAndIds[i+numKeys], []store.StreamEntry{})
+				if err != nil {
+					return nil, fmt.Errorf("error parsing stream id: %w", err)
+				}
+
 				c := make(chan store.StreamEntry, 1)
 				listener := store.StreamListener{C: c, Id: id, Key: key}
 				listeners[i] = listener
@@ -144,6 +144,11 @@ func XRead(args []string) ([]byte, error) {
 
 		if storedValue.Type != store.TypeStream {
 			return nil, errWrongtypeOperation
+		}
+
+		id, err := parseXReadId(keysAndIds[i+numKeys], storedValue.Xval)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing stream id: %w", err)
 		}
 
 		result := getxReadResult(key, id, storedValue.Xval)
@@ -207,6 +212,18 @@ func parseXRangeEndId(id string) (store.StreamId, error) {
 	if id == "+" {
 		//maximum id
 		return store.StreamId{Ms: math.MaxInt64, Sequence: math.MaxInt64}, nil
+	}
+
+	return store.ParseStreamId(id)
+}
+
+func parseXReadId(id string, prevEntries []store.StreamEntry) (store.StreamId, error) {
+	if id == "$" {
+		if len(prevEntries) > 0 {
+			return prevEntries[len(prevEntries)-1].Id, nil
+		}
+
+		return store.StreamId{Ms: 0, Sequence: 0}, nil
 	}
 
 	return store.ParseStreamId(id)
@@ -356,7 +373,6 @@ func handleStreamListeners(storedValue *store.StoredValue, latestEntry store.Str
 
 	remainingListeners := make([]store.StreamListener, 0, len(storedValue.StreamListeners))
 
-	//TODO: the key needs to be published in the channel as well
 	for _, listener := range storedValue.StreamListeners {
 		if latestEntry.Id.IsGreaterThan(listener.Id) {
 			listener.C <- latestEntry
