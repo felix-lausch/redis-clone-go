@@ -100,6 +100,28 @@ type XReadArgs struct {
 	Timeout time.Duration
 }
 
+func XRead(args []string) ([]byte, error) {
+	parsedArgs, err := parseXReadArgs(args)
+	if err != nil {
+		return nil, err
+	}
+
+	results, err := getResults(parsedArgs)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(results) > 0 {
+		return FormatXReadResponse(results), nil
+	}
+
+	if parsedArgs.Block {
+		return handleBlockingXRead(parsedArgs)
+	}
+
+	return protocol.FormatNullBulkString(), nil
+}
+
 func parseXReadArgs(args []string) (*XReadArgs, error) {
 	if len(args) < 3 {
 		return nil, errArgNumber
@@ -146,36 +168,71 @@ func parseXReadArgs(args []string) (*XReadArgs, error) {
 	return parsed, nil
 }
 
-func XRead(args []string) ([]byte, error) {
-	parsedArgs, err := parseXReadArgs(args)
-	if err != nil {
-		return nil, err
-	}
-
-	results := []xReadResult{}
-	listeners := make([]store.StreamListener, len(parsedArgs.Keys))
-	numKeys := len(parsedArgs.Keys)
-
-	for i := range numKeys {
-		key := parsedArgs.Keys[i]
-		idStr := parsedArgs.Ids[i]
-
+func handleBlockingXRead(args *XReadArgs) ([]byte, error) {
+	listeners := make([]store.StreamListener, len(args.Keys))
+	for i := range args.Keys {
+		key := args.Keys[i]
+		idStr := args.Ids[i]
 		storedValue, ok := store.CM.Get(key)
 		if !ok {
-			if parsedArgs.Block {
-				id, err := parseXReadId(idStr, []store.StreamEntry{})
-				if err != nil {
-					return nil, fmt.Errorf("error parsing stream id: %w", err)
-				}
-
-				c := make(chan store.StreamEntry, 1)
-				listener := store.StreamListener{C: c, Id: id, Key: key}
-				listeners[i] = listener
-
-				//TODO: this set operation is a concurrency issue
-				store.CM.Set(key, store.NewStreamListener(listener))
+			id, err := parseXReadId(idStr, []store.StreamEntry{})
+			if err != nil {
+				return nil, fmt.Errorf("error parsing stream id: %w", err)
 			}
+			c := make(chan store.StreamEntry, 1)
+			listener := store.StreamListener{C: c, Id: id, Key: key}
+			listeners[i] = listener
+			//TODO: this set operation is a concurrency issue
+			store.CM.Set(key, store.NewStreamListener(listener))
+			continue
+		}
 
+		if storedValue.Type != store.TypeStream {
+			return nil, errWrongtypeOperation
+		}
+
+		id, err := parseXReadId(idStr, storedValue.Xval)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing stream id: %w", err)
+		}
+
+		c := make(chan store.StreamEntry, 1)
+		listener := store.StreamListener{C: c, Id: id, Key: key}
+		listeners[i] = listener
+		storedValue.AddStreamListener(listener)
+		//TODO: this set operation is a concurrency issue
+		store.CM.Set(key, storedValue)
+	}
+
+	resultChannel := make(chan xReadResult, 1)
+	var timeoutChannel <-chan time.Time
+	if args.Timeout > 0 {
+		timeoutChannel = time.After(args.Timeout)
+	}
+
+	listenForResult(listeners, resultChannel)
+
+	select {
+	case res := <-resultChannel:
+		if err := removeStreamListeners(listeners); err != nil {
+			return nil, fmt.Errorf("error removing stream listeners: %w", err)
+		}
+		return FormatXReadResponse([]xReadResult{res}), nil
+	case <-timeoutChannel:
+		if err := removeStreamListeners(listeners); err != nil {
+			return nil, fmt.Errorf("error removing stream listeners: %w", err)
+		}
+		return protocol.FormatNullBulkString(), nil
+	}
+}
+
+func getResults(args *XReadArgs) ([]xReadResult, error) {
+	results := []xReadResult{}
+	for i := range len(args.Keys) {
+		key := args.Keys[i]
+		idStr := args.Ids[i]
+		storedValue, ok := store.CM.Get(key)
+		if !ok {
 			continue
 		}
 
@@ -189,51 +246,12 @@ func XRead(args []string) ([]byte, error) {
 		}
 
 		result := getxReadResult(key, id, storedValue.Xval)
-
 		if len(result.entries) > 0 {
 			results = append(results, result)
-		} else if parsedArgs.Block {
-			c := make(chan store.StreamEntry, 1)
-			listener := store.StreamListener{C: c, Id: id, Key: key}
-			listeners[i] = listener
-
-			storedValue.AddStreamListener(listener)
-			//TODO: this set operation is a concurrency issue
-			store.CM.Set(key, storedValue)
 		}
 	}
 
-	if len(results) > 0 {
-		return FormatXReadResponse(results), nil
-	} else if !parsedArgs.Block {
-		return protocol.FormatNullBulkString(), nil
-	}
-
-	resultChannel := make(chan xReadResult, 1)
-	var timeoutChannel <-chan time.Time
-	if parsedArgs.Timeout > 0 {
-		timeoutChannel = time.After(parsedArgs.Timeout)
-	}
-
-	listenForResult(listeners, resultChannel)
-
-	select {
-	case res := <-resultChannel:
-		removeStreamListeners(listeners)
-		if err != nil {
-			return nil, fmt.Errorf("error removing stream listeners: %w", err)
-		}
-
-		return FormatXReadResponse([]xReadResult{res}), nil
-
-	case <-timeoutChannel:
-		err = removeStreamListeners(listeners)
-		if err != nil {
-			return nil, fmt.Errorf("error removing stream listeners: %w", err)
-		}
-
-		return protocol.FormatNullBulkString(), nil
-	}
+	return results, nil
 }
 
 func parseXRangeStartId(id string) (store.StreamId, error) {
