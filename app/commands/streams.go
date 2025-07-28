@@ -93,40 +93,77 @@ func XRange(args []string) ([]byte, error) {
 	return FormatStreamEntries(result), nil
 }
 
-func XRead(args []string) ([]byte, error) {
-	if len(args) < 3 || len(args)%2 != 1 {
+type XReadArgs struct {
+	Keys    []string
+	Ids     []string
+	Block   bool
+	Timeout time.Duration
+}
+
+func parseXReadArgs(args []string) (*XReadArgs, error) {
+	if len(args) < 3 {
 		return nil, errArgNumber
 	}
 
-	var timeoutMs int64
-	var err error
-	var blocking bool
+	parsed := &XReadArgs{}
+	var streamsIdx int
 
 	if strings.ToUpper(args[0]) == "BLOCK" {
-		timeoutMs, err = strconv.ParseInt(args[1], 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing block timeout: %w", err)
+		if len(args) < 5 || len(args)%2 != 1 {
+			return nil, errArgNumber
 		}
 
-		blocking = true
-	}
+		parsed.Block = true
+		timeoutMs, err := strconv.ParseInt(args[1], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("value is not an integer or out of range")
+		}
 
-	streamsIdx := findStreamsIndex(args)
-	if streamsIdx < 0 {
-		return nil, errors.New("missing streams argument")
+		parsed.Timeout = time.Duration(timeoutMs) * time.Millisecond
+		streamsIdx = findStreamsIndex(args)
+		if streamsIdx != 2 {
+			return nil, errors.New("syntax error")
+		}
+	} else {
+		if len(args)%2 != 1 {
+			return nil, errArgNumber
+		}
+		streamsIdx = findStreamsIndex(args)
+		if streamsIdx != 0 {
+			return nil, errors.New("syntax error")
+		}
 	}
 
 	keysAndIds := args[streamsIdx+1:]
 	numKeys := len(keysAndIds) / 2
+	parsed.Keys = keysAndIds[:numKeys]
+	parsed.Ids = keysAndIds[numKeys:]
+
+	if len(parsed.Keys) != len(parsed.Ids) {
+		return nil, errors.New("unbalanced XREAD list of streams: keys and IDs must be specified in pairs")
+	}
+
+	return parsed, nil
+}
+
+func XRead(args []string) ([]byte, error) {
+	parsedArgs, err := parseXReadArgs(args)
+	if err != nil {
+		return nil, err
+	}
+
 	results := []xReadResult{}
-	listeners := make([]store.StreamListener, numKeys)
+	listeners := make([]store.StreamListener, len(parsedArgs.Keys))
+	numKeys := len(parsedArgs.Keys)
 
 	for i := range numKeys {
-		key := keysAndIds[i]
+		key := parsedArgs.Keys[i]
+		idStr := parsedArgs.Ids[i]
+
 		storedValue, ok := store.CM.Get(key)
 		if !ok {
-			if blocking {
-				id, err := parseXReadId(keysAndIds[i+numKeys], []store.StreamEntry{})
+			if parsedArgs.Block {
+				id, err := parseXReadId(idStr, []store.StreamEntry{})
 				if err != nil {
 					return nil, fmt.Errorf("error parsing stream id: %w", err)
 				}
@@ -146,7 +183,7 @@ func XRead(args []string) ([]byte, error) {
 			return nil, errWrongtypeOperation
 		}
 
-		id, err := parseXReadId(keysAndIds[i+numKeys], storedValue.Xval)
+		id, err := parseXReadId(idStr, storedValue.Xval)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing stream id: %w", err)
 		}
@@ -155,7 +192,7 @@ func XRead(args []string) ([]byte, error) {
 
 		if len(result.entries) > 0 {
 			results = append(results, result)
-		} else if blocking {
+		} else if parsedArgs.Block {
 			c := make(chan store.StreamEntry, 1)
 			listener := store.StreamListener{C: c, Id: id, Key: key}
 			listeners[i] = listener
@@ -168,14 +205,14 @@ func XRead(args []string) ([]byte, error) {
 
 	if len(results) > 0 {
 		return FormatXReadResponse(results), nil
-	} else if !blocking {
+	} else if !parsedArgs.Block {
 		return protocol.FormatNullBulkString(), nil
 	}
 
 	resultChannel := make(chan xReadResult, 1)
 	var timeoutChannel <-chan time.Time
-	if timeoutMs > 0 {
-		timeoutChannel = time.After(time.Duration(timeoutMs * int64(time.Millisecond)))
+	if parsedArgs.Timeout > 0 {
+		timeoutChannel = time.After(parsedArgs.Timeout)
 	}
 
 	listenForResult(listeners, resultChannel)
